@@ -1,0 +1,25 @@
+terraform {
+  required_providers {
+    azsqlaccess = {
+      source = "MewsSystems/azsqlaccess"
+    }
+  }
+}
+
+# Azure SQL — engine = "mssql"
+provider "azsqlaccess" {
+  engine = "mssql"
+
+  # Optional — falls back to AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET.
+  # Omit entirely to use DefaultAzureCredential (Managed Identity, Workload Identity, Azure CLI).
+  # tenant_id     = "00000000-0000-0000-0000-000000000000"
+  # client_id     = "00000000-0000-0000-0000-000000000000"
+  # client_secret = "super-secret"
+}
+
+# Azure PostgreSQL Flexible Server — alias is required when configuring both engines
+# in the same root module. Resources opt in via `provider = azsqlaccess.postgres`.
+provider "azsqlaccess" {
+  alias  = "postgres"
+  engine = "postgres"
+}
