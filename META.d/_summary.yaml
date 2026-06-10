@@ -1,0 +1,9 @@
+---
+schema: 1.1
+
+summary:
+  owner: team-platform
+  description: |
+    Terraform provider for managing Azure SQL / PostgreSQL database users
+    and role memberships via Entra ID (Azure AD).
+  visibility: public
