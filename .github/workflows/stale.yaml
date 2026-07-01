@@ -1,0 +1,40 @@
+name: Mark and Close Stale PRs
+
+on:
+  schedule:
+    # Runs daily at 01:30 UTC.
+    - cron: '30 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  # read required to list candidates (the issues endpoint also returns PRs)
+  issues: read
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@eb5cf3af3ac0a1aa4c9c45633dd1ae542a27a899 # v10.3.0
+        with:
+          # Mark as stale after 3 days of inactivity, close 7 days after that.
+          days-before-stale: 3
+          days-before-close: 7
+          # Only process pull requests; leave issues untouched.
+          days-before-issue-stale: -1
+          days-before-issue-close: -1
+          stale-pr-label: stale
+          # Draft PRs are work in progress; never mark them stale or close them.
+          exempt-draft-pr: true
+          # PRs with any of these labels are never marked stale or closed.
+          # 'dependencies' is applied by Renovate, exempting its automated PRs.
+          exempt-pr-labels: keep-open,dependencies
+          stale-pr-message: >-
+            👋 This pull request has been inactive for 3 days, so it's been
+            marked **stale**. It will be closed automatically in 7 days unless
+            there's further activity. To keep it open, push a commit, leave a
+            comment, or add the `keep-open` label.
+          close-pr-message: >-
+            This pull request was closed automatically after 7 days as stale.
+            No problem if it was still needed — feel free to reopen it or open
+            a new one to pick things back up.
