@@ -168,7 +168,13 @@ func (r *UserResource) ValidateConfig(ctx context.Context, req resource.Validate
 			)
 		}
 	case "group", "service_principal":
-		if config.ObjectID.IsNull() || config.ObjectID.IsUnknown() {
+		if config.ObjectID.IsUnknown() {
+			// object_id may still be unknown during planning (e.g. computed from a
+			// data source or another resource) — skip validation here, framework
+			// will call us again once it is known.
+			return
+		}
+		if config.ObjectID.IsNull() {
 			resp.Diagnostics.AddAttributeError(
 				path.Root("object_id"),
 				fmt.Sprintf("object_id is required for type = %q", config.Type.ValueString()),

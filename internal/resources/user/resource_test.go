@@ -326,3 +326,36 @@ func TestUserResource_ValidateConfig_UnknownType_Skipped(t *testing.T) {
 		t.Fatalf("ValidateConfig with unknown type must not error; got %v", resp.Diagnostics)
 	}
 }
+
+// TestUserResource_ValidateConfig_GroupUnknownObjectID_Skipped guards the case
+// where object_id is computed from another resource or data source (e.g.
+// `object_id = data.azuread_group.foo.object_id`) and is therefore unknown at
+// plan/validate time. Unknown must be treated as "not yet resolvable", not as
+// "absent" — only a null object_id should error.
+func TestUserResource_ValidateConfig_GroupUnknownObjectID_Skipped(t *testing.T) {
+	ctx := context.Background()
+	schema := userSchema(t)
+
+	objType, ok := schema.Type().TerraformType(ctx).(tftypes.Object)
+	if !ok {
+		t.Fatalf("expected tftypes.Object schema type, got %T", schema.Type().TerraformType(ctx))
+	}
+	values := map[string]tftypes.Value{}
+	for name, attrType := range objType.AttributeTypes {
+		values[name] = tftypes.NewValue(attrType, nil)
+	}
+	values["type"] = tftypes.NewValue(tftypes.String, "group")
+	values["name"] = tftypes.NewValue(tftypes.String, "db.reader")
+	values["object_id"] = tftypes.NewValue(tftypes.String, tftypes.UnknownValue)
+	cfg := tfsdk.Config{
+		Schema: schema,
+		Raw:    tftypes.NewValue(objType, values),
+	}
+
+	r := &UserResource{}
+	resp := &resource.ValidateConfigResponse{}
+	r.ValidateConfig(ctx, resource.ValidateConfigRequest{Config: cfg}, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("ValidateConfig with type=group and unknown object_id must not error; got %v", resp.Diagnostics)
+	}
+}
