@@ -198,6 +198,61 @@ func TestAccUser_servicePrincipal_postgres(t *testing.T) {
 	})
 }
 
+// ---------- Deferred object_id ---------------------------------------------
+
+// The tests above hardcode object_id, so it is always known during the validate
+// walk. These two source it from an azuread data source instead, which is
+// unknown at that point — the state that used to trip ValidateConfig's
+// "object_id is required" error before it learned to distinguish unknown from
+// null. Postgres only: the check lives in internal/resources/user, above the
+// connector layer, so it is engine-independent. Both types that require
+// object_id are covered because they share one switch arm.
+
+// azureadProvider pins the external provider used to resolve object IDs at plan
+// time. Requires directory read permission (Group.Read.All / Application.Read.All)
+// on whatever principal the acceptance run authenticates as.
+var azureadProvider = map[string]resource.ExternalProvider{
+	"azuread": {Source: "hashicorp/azuread", VersionConstraint: "~> 3.0"},
+}
+
+func TestAccUser_groupDeferredObjectID_postgres(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		ExternalProviders:        azureadProvider,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccUserConfig_groupDeferredObjectID_postgres(),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("azsqlaccess_user.test", "type", "group"),
+					resource.TestCheckResourceAttr("azsqlaccess_user.test", "name", os.Getenv("AZSQLACCESS_TEST_GROUP_NAME")),
+					resource.TestCheckResourceAttr("azsqlaccess_user.test", "object_id", os.Getenv("AZSQLACCESS_TEST_GROUP_OBJECT_ID")),
+					resource.TestCheckResourceAttrSet("azsqlaccess_user.test", "principal_id"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccUser_servicePrincipalDeferredObjectID_postgres(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		ExternalProviders:        azureadProvider,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccUserConfig_servicePrincipalDeferredObjectID_postgres(),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("azsqlaccess_user.test", "type", "service_principal"),
+					resource.TestCheckResourceAttr("azsqlaccess_user.test", "name", os.Getenv("AZSQLACCESS_TEST_SP_NAME")),
+					resource.TestCheckResourceAttr("azsqlaccess_user.test", "object_id", os.Getenv("AZSQLACCESS_TEST_SP_OBJECT_ID")),
+					resource.TestCheckResourceAttrSet("azsqlaccess_user.test", "principal_id"),
+				),
+			},
+		},
+	})
+}
+
 // ---------- HCL config builders --------------------------------------------
 
 const mssqlProviderConfig = `
@@ -307,5 +362,45 @@ resource "azsqlaccess_user" "test" {
 		os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE"),
 		os.Getenv("AZSQLACCESS_TEST_SP_NAME"),
 		os.Getenv("AZSQLACCESS_TEST_SP_OBJECT_ID"),
+	)
+}
+
+func testAccUserConfig_groupDeferredObjectID_postgres() string {
+	return postgresProviderConfig + fmt.Sprintf(`
+data "azuread_group" "test" {
+  display_name = %q
+}
+
+resource "azsqlaccess_user" "test" {
+  server    = %q
+  database  = %q
+  type      = "group"
+  name      = data.azuread_group.test.display_name
+  object_id = data.azuread_group.test.object_id
+}
+`,
+		os.Getenv("AZSQLACCESS_TEST_GROUP_NAME"),
+		os.Getenv("AZSQLACCESS_TEST_POSTGRES_SERVER"),
+		os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE"),
+	)
+}
+
+func testAccUserConfig_servicePrincipalDeferredObjectID_postgres() string {
+	return postgresProviderConfig + fmt.Sprintf(`
+data "azuread_service_principal" "test" {
+  display_name = %q
+}
+
+resource "azsqlaccess_user" "test" {
+  server    = %q
+  database  = %q
+  type      = "service_principal"
+  name      = data.azuread_service_principal.test.display_name
+  object_id = data.azuread_service_principal.test.object_id
+}
+`,
+		os.Getenv("AZSQLACCESS_TEST_SP_NAME"),
+		os.Getenv("AZSQLACCESS_TEST_POSTGRES_SERVER"),
+		os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE"),
 	)
 }
