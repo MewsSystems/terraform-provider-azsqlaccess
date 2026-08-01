@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.1](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.1.0...v0.1.1) (2026-08-01)
+
+
+### Bug Fixes
+
+* **user:** accept a computed object_id for group and service_principal ([71c0182](https://github.com/MewsSystems/terraform-provider-azsqlaccess/commit/71c01826098c730718cf526d7e86434ace40c47a))
+* **user:** treat unknown object_id as deferred, not absent, for group/service_principal ([e6c0b9c](https://github.com/MewsSystems/terraform-provider-azsqlaccess/commit/e6c0b9cf26b93208c2abac9a2d87e7747e4ea910))
+
 ## 0.1.0 (2026-07-01)
 
 
