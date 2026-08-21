@@ -39,6 +39,12 @@ provider "azsqlaccess" {
 provider "azsqlaccess" {
   alias  = "postgres"
   engine = "postgres"
+
+  # Optional, PostgreSQL only. Set this when the caller is an administrator only by
+  # way of Entra group membership: PostgreSQL Flexible Server does not expand groups
+  # server-side, so the connection must ask for the group's own role name while still
+  # presenting the caller's token. Omit to connect as the caller itself.
+  # login_username = "db.reader"
 }
 ```
 
@@ -60,4 +66,16 @@ provider "azsqlaccess" { alias = "postgres"; engine = "postgres" }
 
 - `client_id` (String) Service principal client ID (application ID). Falls back to `AZURE_CLIENT_ID` then `ARM_CLIENT_ID`. Required for service-principal and OIDC auth modes.
 - `client_secret` (String, Sensitive) Service principal client secret. Falls back to `AZURE_CLIENT_SECRET` then `ARM_CLIENT_SECRET`. Sensitive — never written to plan output. Set together with `tenant_id` and `client_id` to use client-secret auth; otherwise the provider falls through to OIDC (when `ARM_USE_OIDC=true`) or the ambient chain (Azure CLI → Workload Identity → Managed Identity).
+- `login_username` (String) PostgreSQL role to connect as, overriding the identity derived from the Entra token. Falls back to `AZSQLACCESS_LOGIN_USERNAME`. **`engine = "postgres"` only** — Azure SQL negotiates the principal over federated auth and sends no username, so setting this with `engine = "mssql"` is an error.
+
+Set this when the caller's administrator rights come from **Entra group membership**. PostgreSQL Flexible Server does not expand groups server-side: it matches the token against a role that already exists, and that role is whichever name the connection asks for. A group member must therefore connect as the group's own role name, presenting its own token as the password:
+
+```hcl
+provider "azsqlaccess" {
+  engine         = "postgres"
+  login_username = "db.reader" # the Entra group configured as server administrator
+}
+```
+
+Leave unset to connect as the caller itself — its UPN for a user, its client ID for a service principal or managed identity — which requires that principal to be an administrator in its own right.
 - `tenant_id` (String) Entra tenant ID. Falls back to `AZURE_TENANT_ID` then `ARM_TENANT_ID`. Required for service-principal and OIDC auth modes.

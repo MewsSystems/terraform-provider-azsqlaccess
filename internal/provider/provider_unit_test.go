@@ -56,7 +56,7 @@ func TestProvider_Metadata(t *testing.T) {
 
 func TestProvider_Schema_HasRequiredAttributes(t *testing.T) {
 	s := providerSchema(t)
-	want := []string{"engine", "tenant_id", "client_id", "client_secret"}
+	want := []string{"engine", "tenant_id", "client_id", "client_secret", "login_username"}
 	for _, n := range want {
 		if _, ok := s.Attributes[n]; !ok {
 			t.Errorf("schema missing attribute %q", n)
@@ -134,10 +134,11 @@ func TestProvider_Configure_MSSQLEngine_WithServicePrincipal(t *testing.T) {
 	cfg := tfsdk.Config{
 		Schema: providerSchema(t),
 		Raw: tftypes.NewValue(objType, map[string]tftypes.Value{
-			"engine":        tftypes.NewValue(tftypes.String, "mssql"),
-			"tenant_id":     tftypes.NewValue(tftypes.String, "00000000-0000-0000-0000-000000000000"),
-			"client_id":     tftypes.NewValue(tftypes.String, "00000000-0000-0000-0000-000000000000"),
-			"client_secret": tftypes.NewValue(tftypes.String, "secret"),
+			"engine":         tftypes.NewValue(tftypes.String, "mssql"),
+			"tenant_id":      tftypes.NewValue(tftypes.String, "00000000-0000-0000-0000-000000000000"),
+			"client_id":      tftypes.NewValue(tftypes.String, "00000000-0000-0000-0000-000000000000"),
+			"client_secret":  tftypes.NewValue(tftypes.String, "secret"),
+			"login_username": tftypes.NewValue(tftypes.String, nil),
 		}),
 	}
 	resp := &provider.ConfigureResponse{}
@@ -154,10 +155,11 @@ func TestProvider_Configure_PostgresEngine(t *testing.T) {
 	cfg := tfsdk.Config{
 		Schema: providerSchema(t),
 		Raw: tftypes.NewValue(objType, map[string]tftypes.Value{
-			"engine":        tftypes.NewValue(tftypes.String, "postgres"),
-			"tenant_id":     tftypes.NewValue(tftypes.String, "00000000-0000-0000-0000-000000000000"),
-			"client_id":     tftypes.NewValue(tftypes.String, "00000000-0000-0000-0000-000000000000"),
-			"client_secret": tftypes.NewValue(tftypes.String, "secret"),
+			"engine":         tftypes.NewValue(tftypes.String, "postgres"),
+			"tenant_id":      tftypes.NewValue(tftypes.String, "00000000-0000-0000-0000-000000000000"),
+			"client_id":      tftypes.NewValue(tftypes.String, "00000000-0000-0000-0000-000000000000"),
+			"client_secret":  tftypes.NewValue(tftypes.String, "secret"),
+			"login_username": tftypes.NewValue(tftypes.String, nil),
 		}),
 	}
 	resp := &provider.ConfigureResponse{}
@@ -177,10 +179,11 @@ func TestProvider_Configure_UnsupportedEngine(t *testing.T) {
 	cfg := tfsdk.Config{
 		Schema: providerSchema(t),
 		Raw: tftypes.NewValue(objType, map[string]tftypes.Value{
-			"engine":        tftypes.NewValue(tftypes.String, "oracle"),
-			"tenant_id":     tftypes.NewValue(tftypes.String, nil),
-			"client_id":     tftypes.NewValue(tftypes.String, nil),
-			"client_secret": tftypes.NewValue(tftypes.String, nil),
+			"engine":         tftypes.NewValue(tftypes.String, "oracle"),
+			"tenant_id":      tftypes.NewValue(tftypes.String, nil),
+			"client_id":      tftypes.NewValue(tftypes.String, nil),
+			"client_secret":  tftypes.NewValue(tftypes.String, nil),
+			"login_username": tftypes.NewValue(tftypes.String, nil),
 		}),
 	}
 	resp := &provider.ConfigureResponse{}
@@ -194,5 +197,59 @@ func TestProvider_Configure_UnsupportedEngine(t *testing.T) {
 	}
 	if !strings.Contains(joined, "engine must be") {
 		t.Fatalf("unexpected error message: %s", joined)
+	}
+}
+
+// ---------- ValidateConfig --------------------------------------------------
+
+// validateConfig runs ValidateConfig over a config whose attributes are all null
+// except the ones named in set.
+func validateConfig(t *testing.T, set map[string]string) *provider.ValidateConfigResponse {
+	t.Helper()
+	ctx := context.Background()
+	s := providerSchema(t)
+	objType := schemaObjectType(t, ctx, s)
+
+	values := map[string]tftypes.Value{}
+	for name, at := range objType.AttributeTypes {
+		values[name] = tftypes.NewValue(at, nil)
+	}
+	for name, v := range set {
+		values[name] = tftypes.NewValue(tftypes.String, v)
+	}
+
+	p := &AzsqlaccessProvider{}
+	resp := &provider.ValidateConfigResponse{}
+	p.ValidateConfig(ctx, provider.ValidateConfigRequest{
+		Config: tfsdk.Config{Schema: s, Raw: tftypes.NewValue(objType, values)},
+	}, resp)
+	return resp
+}
+
+func TestProvider_ValidateConfig_LoginUsernameRejectedOnMSSQL(t *testing.T) {
+	resp := validateConfig(t, map[string]string{"engine": "mssql", "login_username": "db.reader"})
+	if !resp.Diagnostics.HasError() {
+		t.Fatalf("login_username with engine=mssql should error")
+	}
+	joined := ""
+	for _, d := range resp.Diagnostics.Errors() {
+		joined += d.Summary() + " " + d.Detail()
+	}
+	if !strings.Contains(joined, "login_username is not supported") {
+		t.Fatalf("unexpected error message: %s", joined)
+	}
+}
+
+func TestProvider_ValidateConfig_LoginUsernameAllowedOnPostgres(t *testing.T) {
+	resp := validateConfig(t, map[string]string{"engine": "postgres", "login_username": "db.reader"})
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("unexpected: %v", resp.Diagnostics)
+	}
+}
+
+func TestProvider_ValidateConfig_MSSQLWithoutLoginUsername(t *testing.T) {
+	resp := validateConfig(t, map[string]string{"engine": "mssql"})
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("unexpected: %v", resp.Diagnostics)
 	}
 }

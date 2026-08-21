@@ -14,12 +14,12 @@ import (
 // factory-level tests do not depend on the host's Azure environment. Pool
 // creation in pgx is lazy — no network calls happen during these tests.
 func newTestFactory(_ *testing.T) *Factory {
-	return NewFactory(&fakeCred{token: "test-token"})
+	return NewFactory(&fakeCred{token: "test-token"}, "")
 }
 
 func TestNewFactory_StoresCredentialAndInitsPools(t *testing.T) {
 	cred := &fakeCred{token: "test"}
-	f := NewFactory(cred)
+	f := NewFactory(cred, "")
 	if f == nil || f.cred == nil {
 		t.Fatalf("Factory or its credential is nil")
 	}
@@ -149,5 +149,12 @@ func TestFactory_NewSysPool_ReusesPostgresPool(t *testing.T) {
 	}
 	if sys1 == cc.pool {
 		t.Errorf("system pool must differ from target-db pool")
+	}
+}
+
+func TestNewFactory_StoresLoginUsername(t *testing.T) {
+	f := NewFactory(&fakeCred{token: "test-token"}, "db.reader")
+	if f.loginUsername != "db.reader" {
+		t.Errorf("loginUsername = %q, want db.reader", f.loginUsername)
 	}
 }

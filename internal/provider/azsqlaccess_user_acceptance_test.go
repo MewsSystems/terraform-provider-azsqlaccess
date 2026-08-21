@@ -6,6 +6,7 @@ package provider
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -402,5 +403,97 @@ resource "azsqlaccess_user" "test" {
 		os.Getenv("AZSQLACCESS_TEST_SP_NAME"),
 		os.Getenv("AZSQLACCESS_TEST_POSTGRES_SERVER"),
 		os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE"),
+	)
+}
+
+// ---------- login_username (group login, PostgreSQL) ------------------------
+
+// TestAccUser_user_postgres_viaGroupLogin exercises the provider's
+// login_username against a real server: it connects as the Entra group's own
+// role rather than as the caller, which is the only way a caller whose admin
+// rights come solely from group membership can authenticate to PostgreSQL
+// Flexible Server (pgaadauth performs no server-side group expansion).
+//
+// Skipped unless AZSQLACCESS_TEST_POSTGRES_ADMIN_GROUP names a group that is
+// configured as an Entra administrator on the test server AND contains the
+// identity running the test — a setup the other tests don't require, so it is
+// opt-in rather than enforced in testAccPreCheck.
+func TestAccUser_user_postgres_viaGroupLogin(t *testing.T) {
+	adminGroup := os.Getenv("AZSQLACCESS_TEST_POSTGRES_ADMIN_GROUP")
+	if adminGroup == "" {
+		t.Skip("AZSQLACCESS_TEST_POSTGRES_ADMIN_GROUP not set; skipping group-login test")
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccUserConfig_user_postgres_viaGroupLogin(adminGroup),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("azsqlaccess_user.test", "type", "user"),
+					resource.TestCheckResourceAttr("azsqlaccess_user.test", "name", os.Getenv("AZSQLACCESS_TEST_USER_UPN")),
+					resource.TestCheckResourceAttrSet("azsqlaccess_user.test", "principal_id"),
+				),
+			},
+		},
+	})
+}
+
+// TestAccProvider_loginUsername_rejectedOnMSSQL asserts the ValidateConfig
+// guard fires before any connection is attempted. It reaches no Azure resource,
+// but lives here because only the acceptance harness runs real config
+// validation through the plugin protocol.
+func TestAccProvider_loginUsername_rejectedOnMSSQL(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config:      testAccProviderConfig_loginUsername_mssql(),
+				ExpectError: regexp.MustCompile(`login_username is not supported`),
+			},
+		},
+	})
+}
+
+func testAccUserConfig_user_postgres_viaGroupLogin(adminGroup string) string {
+	return fmt.Sprintf(`
+provider "azsqlaccess" {
+  engine         = "postgres"
+  login_username = %q
+}
+
+resource "azsqlaccess_user" "test" {
+  server   = %q
+  database = %q
+  type     = "user"
+  name     = %q
+}
+`,
+		adminGroup,
+		os.Getenv("AZSQLACCESS_TEST_POSTGRES_SERVER"),
+		os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE"),
+		os.Getenv("AZSQLACCESS_TEST_USER_UPN"),
+	)
+}
+
+func testAccProviderConfig_loginUsername_mssql() string {
+	return fmt.Sprintf(`
+provider "azsqlaccess" {
+  engine         = "mssql"
+  login_username = "db.reader"
+}
+
+resource "azsqlaccess_user" "test" {
+  server   = %q
+  database = %q
+  type     = "user"
+  name     = %q
+}
+`,
+		os.Getenv("AZSQLACCESS_TEST_MSSQL_SERVER"),
+		os.Getenv("AZSQLACCESS_TEST_DATABASE"),
+		os.Getenv("AZSQLACCESS_TEST_USER_UPN"),
 	)
 }
