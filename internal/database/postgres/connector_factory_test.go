@@ -158,3 +158,24 @@ func TestNewFactory_StoresLoginUsername(t *testing.T) {
 		t.Errorf("loginUsername = %q, want db.reader", f.loginUsername)
 	}
 }
+
+// The pool bounds matter operationally — pools are never closed, so an
+// unbounded default would hold connections a small Azure SKU can't spare.
+// pgxpool is lazy, so building the pool opens nothing.
+func TestFactory_NewPool_AppliesConnectionBounds(t *testing.T) {
+	f := newTestFactory(t)
+
+	pool, err := f.newPool("myserver.postgres.database.azure.com", "mydb")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer pool.Close()
+
+	cfg := pool.Config()
+	if cfg.MaxConns != maxConns {
+		t.Errorf("MaxConns = %d, want %d", cfg.MaxConns, maxConns)
+	}
+	if cfg.MaxConnIdleTime != maxConnIdleTime {
+		t.Errorf("MaxConnIdleTime = %v, want %v", cfg.MaxConnIdleTime, maxConnIdleTime)
+	}
+}
