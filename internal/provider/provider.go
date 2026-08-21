@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -23,6 +24,7 @@ import (
 )
 
 var _ provider.Provider = &AzsqlaccessProvider{}
+var _ provider.ProviderWithValidateConfig = &AzsqlaccessProvider{}
 
 type AzsqlaccessProvider struct {
 	version string
@@ -31,10 +33,11 @@ type AzsqlaccessProvider struct {
 // providerModel maps the HCL provider block to a typed Go struct.
 // Server is per-resource — one Entra identity can access multiple servers.
 type providerModel struct {
-	Engine       types.String `tfsdk:"engine"`
-	TenantID     types.String `tfsdk:"tenant_id"`
-	ClientID     types.String `tfsdk:"client_id"`
-	ClientSecret types.String `tfsdk:"client_secret"`
+	Engine        types.String `tfsdk:"engine"`
+	TenantID      types.String `tfsdk:"tenant_id"`
+	ClientID      types.String `tfsdk:"client_id"`
+	ClientSecret  types.String `tfsdk:"client_secret"`
+	LoginUsername types.String `tfsdk:"login_username"`
 }
 
 func (p *AzsqlaccessProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
@@ -82,7 +85,57 @@ func (p *AzsqlaccessProvider) Schema(_ context.Context, _ provider.SchemaRequest
 				Optional:  true,
 				Sensitive: true,
 			},
+			"login_username": schema.StringAttribute{
+				MarkdownDescription: "PostgreSQL role to connect as, overriding the identity derived from the " +
+					"Entra token. Falls back to `AZSQLACCESS_LOGIN_USERNAME`. **`engine = \"postgres\"` only** — " +
+					"Azure SQL negotiates the principal over federated auth and sends no username, so setting " +
+					"this with `engine = \"mssql\"` is an error.\n\n" +
+					"Set this when the caller's administrator rights come from **Entra group membership**. " +
+					"PostgreSQL Flexible Server does not expand groups server-side: it matches the token " +
+					"against a role that already exists, and that role is whichever name the connection asks " +
+					"for. A group member must therefore connect as the group's own role name, presenting its " +
+					"own token as the password:\n\n" +
+					"```hcl\n" +
+					"provider \"azsqlaccess\" {\n" +
+					"  engine         = \"postgres\"\n" +
+					"  login_username = \"db.reader\" # the Entra group configured as server administrator\n" +
+					"}\n" +
+					"```\n\n" +
+					"Leave unset to connect as the caller itself — its UPN for a user, its client ID for a " +
+					"service principal or managed identity — which requires that principal to be an " +
+					"administrator in its own right.",
+				Optional: true,
+			},
 		},
+	}
+}
+
+// ValidateConfig rejects login_username on the mssql engine. The MSSQL connector
+// authenticates through go-mssqldb's access-token connector, which puts no
+// username on the wire at all — the server resolves the principal (and expands
+// its group membership) from the token itself. Accepting the attribute there
+// would silently do nothing.
+func (p *AzsqlaccessProvider) ValidateConfig(ctx context.Context, req provider.ValidateConfigRequest, resp *provider.ValidateConfigResponse) {
+	var config providerModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Unknown values are re-validated once they resolve.
+	if config.Engine.IsUnknown() || config.LoginUsername.IsUnknown() {
+		return
+	}
+
+	if config.Engine.ValueString() == "mssql" && config.LoginUsername.ValueString() != "" {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("login_username"),
+			"login_username is not supported with engine = \"mssql\"",
+			"Azure SQL authenticates via federated auth and sends no username — the server derives the "+
+				"principal from the token and expands its Entra group membership itself. Remove "+
+				"login_username, and make sure the caller is a member of a group configured as an Entra "+
+				"administrator on the server.",
+		)
 	}
 }
 
@@ -99,6 +152,7 @@ func (p *AzsqlaccessProvider) Configure(ctx context.Context, req provider.Config
 	tenantID := cmp.Or(config.TenantID.ValueString(), os.Getenv("AZURE_TENANT_ID"), os.Getenv("ARM_TENANT_ID"))
 	clientID := cmp.Or(config.ClientID.ValueString(), os.Getenv("AZURE_CLIENT_ID"), os.Getenv("ARM_CLIENT_ID"))
 	clientSecret := cmp.Or(config.ClientSecret.ValueString(), os.Getenv("AZURE_CLIENT_SECRET"), os.Getenv("ARM_CLIENT_SECRET"))
+	loginUsername := cmp.Or(config.LoginUsername.ValueString(), os.Getenv("AZSQLACCESS_LOGIN_USERNAME"))
 
 	// Single Entra credential, shared by both engines. Precedence inside
 	// BuildEntraCredential: explicit SP → ARM_USE_OIDC → ambient chain
@@ -113,7 +167,7 @@ func (p *AzsqlaccessProvider) Configure(ctx context.Context, req provider.Config
 	case "mssql":
 		resp.ResourceData = mssql.NewFactory(cred)
 	case "postgres":
-		resp.ResourceData = postgres.NewFactory(cred)
+		resp.ResourceData = postgres.NewFactory(cred, loginUsername)
 	default:
 		resp.Diagnostics.AddError(
 			"Unsupported engine",

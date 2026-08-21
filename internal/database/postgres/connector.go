@@ -40,25 +40,35 @@ const tokenScope = "https://ossrdbms-aad.database.windows.net/.default"
 // system database pool used by CreateUser — avoiding repeated Entra token
 // acquisition and TCP handshakes per resource operation.
 // mu protects pools against concurrent access during parallel applies.
+// loginUsername, when non-empty, overrides the token-derived connection role
+// name — see applyTokenAuth.
 type Factory struct {
-	cred  azcore.TokenCredential
-	mu    sync.Mutex
-	pools map[string]*pgxpool.Pool
+	cred          azcore.TokenCredential
+	loginUsername string
+	mu            sync.Mutex
+	pools         map[string]*pgxpool.Pool
 }
 
 // NewFactory wraps a pre-built credential. The credential is constructed once
 // by the provider via database.BuildEntraCredential, then shared across both
 // engine factories so all auth flows through a single source of truth.
-func NewFactory(cred azcore.TokenCredential) *Factory {
-	return &Factory{cred: cred, pools: make(map[string]*pgxpool.Pool)}
+//
+// loginUsername is the provider's optional login_username: pass "" to keep the
+// default behaviour of connecting as the token's own principal.
+func NewFactory(cred azcore.TokenCredential, loginUsername string) *Factory {
+	return &Factory{
+		cred:          cred,
+		loginUsername: loginUsername,
+		pools:         make(map[string]*pgxpool.Pool),
+	}
 }
 
 // GetConnector returns a Connector backed by a cached pgxpool for the given
 // (server, database) pair, creating the pool on first call.
 // Before each new connection the pool acquires a fresh Entra token and:
 //   - injects it as the connection password (required by pgaadauth)
-//   - extracts the caller identity from the JWT claims and sets it as the
-//     connection username — eliminating any need for an admin_username setting
+//   - sets the connection username to the provider's login_username, or, when
+//     that is unset, to the caller identity extracted from the JWT claims
 //
 // The system database pool ("postgres") is NOT opened here. It is obtained
 // lazily inside CreateUser via the same cache — the only operation that needs
@@ -104,16 +114,18 @@ func (f *Factory) cachedPool(server, database string) (*pgxpool.Pool, error) {
 // It injects a fresh Entra token (and the derived username) before each
 // new connection, so tokens are always valid across long-running applies.
 func (f *Factory) newPool(server, database string) (*pgxpool.Pool, error) {
-	// No user= in the DSN — it is resolved from the JWT claims in BeforeConnect.
+	// No user= in the DSN — it is set in BeforeConnect, from login_username when
+	// configured and from the JWT claims otherwise.
 	connStr := fmt.Sprintf("host=%s dbname=%s sslmode=require", server, database)
 	config, err := pgxpool.ParseConfig(connStr)
 	if err != nil {
 		return nil, fmt.Errorf("parsing postgres config for %s/%s: %w", server, database, err)
 	}
 
-	cred := f.cred // capture for closure
+	cred := f.cred                   // capture for closure
+	loginUsername := f.loginUsername // capture for closure
 	config.BeforeConnect = func(ctx context.Context, connConfig *pgx.ConnConfig) error {
-		return applyTokenAuth(ctx, cred, connConfig)
+		return applyTokenAuth(ctx, cred, connConfig, loginUsername)
 	}
 
 	// pgxpool is lazy — no connections are opened until first use.
@@ -125,23 +137,34 @@ func (f *Factory) newPool(server, database string) (*pgxpool.Pool, error) {
 // Extracted from newPool's BeforeConnect closure so it can be unit-tested in
 // isolation against a fake azcore.TokenCredential.
 //
-// Username derivation:
+// Username derivation, when loginUsername is empty:
 //   - upn / preferred_username for user accounts
 //   - appid for service principals and managed identities
 //
+// A non-empty loginUsername is used verbatim instead. This is what makes group
+// login work: pgaadauth has no server-side group expansion, so a caller whose
+// only admin grant comes from Entra group membership must connect as the group's
+// role name while still presenting its own token. The token is never derived
+// from loginUsername — only the role being assumed is.
+//
 // Token acquisition uses the fixed PostgreSQL audience scope. The token IS the
 // password — pgaadauth on the server validates it on each new connection.
-func applyTokenAuth(ctx context.Context, cred azcore.TokenCredential, connConfig *pgx.ConnConfig) error {
+func applyTokenAuth(ctx context.Context, cred azcore.TokenCredential, connConfig *pgx.ConnConfig, loginUsername string) error {
 	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{tokenScope},
 	})
 	if err != nil {
 		return fmt.Errorf("acquiring Azure token for postgres: %w", err)
 	}
-	username, err := usernameFromToken(token.Token)
-	if err != nil {
-		return fmt.Errorf("resolving identity from Azure token: %w", err)
+
+	username := loginUsername
+	if username == "" {
+		username, err = usernameFromToken(token.Token)
+		if err != nil {
+			return fmt.Errorf("resolving identity from Azure token: %w", err)
+		}
 	}
+
 	connConfig.User = username
 	connConfig.Password = token.Token
 	return nil
