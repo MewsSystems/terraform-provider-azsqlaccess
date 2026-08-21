@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.0...v0.2.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* **postgres:** bound connection pool size and idle lifetime ([0eb6d01](https://github.com/MewsSystems/terraform-provider-azsqlaccess/commit/0eb6d01bae568551f187f4c31eb6562f62e549c0))
+
 ## [0.2.0](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.1.1...v0.2.0) (2026-08-21)
 
 

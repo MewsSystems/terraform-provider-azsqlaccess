@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -33,6 +34,25 @@ var _ database_pkg.DatabaseConnector = (*Connector)(nil)
 // tokenScope is the OAuth2 audience for Azure Database for PostgreSQL.
 // All Entra tokens used as passwords must target this resource.
 const tokenScope = "https://ossrdbms-aad.database.windows.net/.default"
+
+// Connection-pool bounds. Pools are cached per (server, database) and never
+// closed for the lifetime of the Terraform run, so a stack spanning several
+// databases holds every connection it ever opened. Azure PostgreSQL Flexible
+// Server allows as few as ~35 on the smaller SKUs, shared with everything else
+// pointing at that server.
+//
+//   - maxConns bounds one pool explicitly. pgx would otherwise default to
+//     max(4, numCPU), which scales with the machine running Terraform — a
+//     property of the client that says nothing about what the server can spare.
+//     Every operation is a short, self-contained statement that acquires and
+//     releases a connection, so a wider pool buys almost no wall-clock.
+//   - maxConnIdleTime reclaims connections between bursts. pgx defaults to 30
+//     minutes, which outlasts most applies and makes the pool effectively
+//     permanent.
+const (
+	maxConns        = 4
+	maxConnIdleTime = 2 * time.Minute
+)
 
 // Factory holds the resolved Entra credential and a cache of pgxpool.Pool
 // instances keyed by "server\x00database". Pools are reused across all CRUD
@@ -121,6 +141,9 @@ func (f *Factory) newPool(server, database string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing postgres config for %s/%s: %w", server, database, err)
 	}
+
+	config.MaxConns = maxConns
+	config.MaxConnIdleTime = maxConnIdleTime
 
 	cred := f.cred                   // capture for closure
 	loginUsername := f.loginUsername // capture for closure
