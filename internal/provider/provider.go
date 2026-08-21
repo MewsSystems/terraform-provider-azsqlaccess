@@ -115,6 +115,10 @@ func (p *AzsqlaccessProvider) Schema(_ context.Context, _ provider.SchemaRequest
 // username on the wire at all — the server resolves the principal (and expands
 // its group membership) from the token itself. Accepting the attribute there
 // would silently do nothing.
+//
+// Only the HCL attribute is checked: AZSQLACCESS_LOGIN_USERNAME is process-wide,
+// so in a module running both engines it would fail the mssql instance over a
+// variable exported for the postgres one.
 func (p *AzsqlaccessProvider) ValidateConfig(ctx context.Context, req provider.ValidateConfigRequest, resp *provider.ValidateConfigResponse) {
 	var config providerModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
