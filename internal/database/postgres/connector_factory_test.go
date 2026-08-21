@@ -14,12 +14,12 @@ import (
 // factory-level tests do not depend on the host's Azure environment. Pool
 // creation in pgx is lazy — no network calls happen during these tests.
 func newTestFactory(_ *testing.T) *Factory {
-	return NewFactory(&fakeCred{token: "test-token"})
+	return NewFactory(&fakeCred{token: "test-token"}, "")
 }
 
 func TestNewFactory_StoresCredentialAndInitsPools(t *testing.T) {
 	cred := &fakeCred{token: "test"}
-	f := NewFactory(cred)
+	f := NewFactory(cred, "")
 	if f == nil || f.cred == nil {
 		t.Fatalf("Factory or its credential is nil")
 	}
@@ -149,5 +149,33 @@ func TestFactory_NewSysPool_ReusesPostgresPool(t *testing.T) {
 	}
 	if sys1 == cc.pool {
 		t.Errorf("system pool must differ from target-db pool")
+	}
+}
+
+func TestNewFactory_StoresLoginUsername(t *testing.T) {
+	f := NewFactory(&fakeCred{token: "test-token"}, "db.reader")
+	if f.loginUsername != "db.reader" {
+		t.Errorf("loginUsername = %q, want db.reader", f.loginUsername)
+	}
+}
+
+// The pool bounds matter operationally — pools are never closed, so an
+// unbounded default would hold connections a small Azure SKU can't spare.
+// pgxpool is lazy, so building the pool opens nothing.
+func TestFactory_NewPool_AppliesConnectionBounds(t *testing.T) {
+	f := newTestFactory(t)
+
+	pool, err := f.newPool("myserver.postgres.database.azure.com", "mydb")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer pool.Close()
+
+	cfg := pool.Config()
+	if cfg.MaxConns != maxConns {
+		t.Errorf("MaxConns = %d, want %d", cfg.MaxConns, maxConns)
+	}
+	if cfg.MaxConnIdleTime != maxConnIdleTime {
+		t.Errorf("MaxConnIdleTime = %v, want %v", cfg.MaxConnIdleTime, maxConnIdleTime)
 	}
 }

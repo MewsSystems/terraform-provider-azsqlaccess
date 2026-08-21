@@ -79,6 +79,10 @@ provider "azsqlaccess" {
 provider "azsqlaccess" {
   alias  = "postgres"
   engine = "postgres"
+
+  # Optional, PostgreSQL only. Required when the caller is an administrator only
+  # through Entra group membership — see "Connecting as an Entra group" below.
+  # login_username = "db.reader"
 }
 ```
 
@@ -88,6 +92,7 @@ provider "azsqlaccess" {
 | `tenant_id` | no | Entra tenant ID. Falls back to `AZURE_TENANT_ID` then `ARM_TENANT_ID` |
 | `client_id` | no | Service principal client ID. Falls back to `AZURE_CLIENT_ID` then `ARM_CLIENT_ID` |
 | `client_secret` | no | Service principal secret. Falls back to `AZURE_CLIENT_SECRET` then `ARM_CLIENT_SECRET`. Sensitive |
+| `login_username` | no | PostgreSQL role to connect as, overriding the token-derived identity. Falls back to `AZSQLACCESS_LOGIN_USERNAME`. `engine = "postgres"` only — an error on `mssql` |
 
 ---
 
@@ -320,6 +325,23 @@ Both engines now share the same `azcore.TokenCredential`. MSSQL uses go-mssqldb'
 **PostgreSQL prerequisite:** Entra authentication must be enabled on the Flexible Server:
 
 > Azure Portal → PostgreSQL Flexible Server → Authentication → set method to "PostgreSQL and Microsoft Entra authentication" → set a Microsoft Entra admin → Save
+
+### Connecting as an Entra group
+
+The two engines resolve group membership differently, and only PostgreSQL needs help from the provider.
+
+**Azure SQL** sends no username: the token goes over federated auth and the server derives the principal and expands its Entra group membership itself. A caller that is a member of a group configured as the server's Entra administrator connects as itself and lands as administrator. Nothing to configure — and `login_username` is rejected on this engine because it would do nothing.
+
+**PostgreSQL Flexible Server** has no such expansion. `pgaadauth` matches the presented token against a role that already exists on the server, and that role is whichever name the connection asks for. A group administrator produces a role named after the *group*, not after each member, so a member connecting under its own name (UPN for a user, client ID for a service principal or managed identity) gets `FATAL: password authentication failed`. Set `login_username` to the group's display name to connect as that role instead — the token still belongs to the caller, only the assumed role changes:
+
+```hcl
+provider "azsqlaccess" {
+  engine         = "postgres"
+  login_username = "db.reader" # the Entra group configured as server administrator
+}
+```
+
+Leave `login_username` unset to connect as the caller itself, which requires that principal to be an administrator in its own right. Connecting as the group is generally preferable for a deploying identity: objects it creates are owned by the group role, so rotating the identity behind it does not strand ownership.
 
 ---
 

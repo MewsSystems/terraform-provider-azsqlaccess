@@ -18,6 +18,7 @@ A maintainer helper for the one-time server setup lives in [`fixtures/`](./fixtu
 | 8 | **GitHub Environment** *(only if using federation)* | Optionally require maintainer approval. |
 | 9 | **Azure SQL server + database** | Entra-only. A UAMI with the Entra `Directory Readers` role must be attached as `primary_user_assigned_identity_id` — Azure SQL needs it for Graph lookups during `CREATE USER ... FROM EXTERNAL PROVIDER`. The UAMI can be the CI identity itself if it's already a UAMI with that role. |
 | 10 | **Postgres Flexible Server + database** | Entra-only. No extra MI/Graph setup — pgaadauth takes object IDs directly. |
+| 11 | **Graph read on the CI identity** | `Group.Read.All` + `Application.Read.All` (or the `Directory Readers` role). Only `TestAccUser_{group,servicePrincipal}DeferredObjectID_postgres` need it — they resolve `object_id` through the `azuread` provider instead of hardcoding it, which is the only way to exercise an unknown `object_id` at validate time. Without it those two tests fail on the data-source read; the rest are unaffected. |
 
 Items 9 and 10 can be provisioned with [`fixtures/`](./fixtures/README.md) — that's a one-shot apply, not a per-run dependency. The other prereqs you create by hand.
 
@@ -47,6 +48,7 @@ Items 9 and 10 can be provisioned with [`fixtures/`](./fixtures/README.md) — t
 | `AZSQLACCESS_TEST_USER_UPN` | `juan.perez@milanesa.com` |
 | `AZSQLACCESS_TEST_GROUP_NAME` | `db.reader` |
 | `AZSQLACCESS_TEST_SP_NAME` | `myapp-identity` |
+| `AZSQLACCESS_TEST_POSTGRES_ADMIN_GROUP` *(optional)* | `db.reader` |
 
 ## Running in CI
 
@@ -71,6 +73,9 @@ export AZSQLACCESS_TEST_GROUP_NAME=<test group display name>
 export AZSQLACCESS_TEST_GROUP_OBJECT_ID=<test group OID>
 export AZSQLACCESS_TEST_SP_NAME=<test SP display name>
 export AZSQLACCESS_TEST_SP_OBJECT_ID=<test SP OID>
+
+# Optional — enables the group-login test, see below.
+export AZSQLACCESS_TEST_POSTGRES_ADMIN_GROUP=<Entra group that admins the PG server>
 ```
 
 Then:
@@ -94,6 +99,12 @@ If you need to (re)build the test servers, use [`fixtures/`](./fixtures/README.m
 Whoever sets up the Postgres server (via `fixtures/` or by hand) becomes its Entra admin, and `pgaadauth` reserves the admin's UPN as a role name. If you then point `AZSQLACCESS_TEST_USER_UPN` at the same UPN, `TestAccUser_user_postgres` fails with "role already exists". Use a different real Entra user. Group and SP tests are unaffected.
 
 In CI this doesn't trigger because the Postgres admin is the CI SP and the test user is a real human UPN.
+
+### Optional: `AZSQLACCESS_TEST_POSTGRES_ADMIN_GROUP` (group login)
+
+`TestAccUser_user_postgres_viaGroupLogin` covers the provider's `login_username`: connecting as an Entra group's role instead of as the caller. It skips unless this variable is set, because it needs a setup the other tests don't — a group that is **both** an Entra administrator on the Postgres server **and** contains the identity running the test.
+
+Set it to that group's display name. The caller still presents its own token; only the role it assumes changes. If the variable names a group that isn't a server administrator, the test fails at connect with `FATAL: password authentication failed`.
 
 ### Iteration tips
 

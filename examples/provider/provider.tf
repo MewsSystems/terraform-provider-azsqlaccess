@@ -22,4 +22,10 @@ provider "azsqlaccess" {
 provider "azsqlaccess" {
   alias  = "postgres"
   engine = "postgres"
+
+  # Optional, PostgreSQL only. Set this when the caller is an administrator only by
+  # way of Entra group membership: PostgreSQL Flexible Server does not expand groups
+  # server-side, so the connection must ask for the group's own role name while still
+  # presenting the caller's token. Omit to connect as the caller itself.
+  # login_username = "db.reader"
 }
