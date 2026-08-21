@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.1...v0.2.2) (2026-08-21)
+
+
+### Bug Fixes
+
+* **deps:** bump google.golang.org/grpc to v1.82.1 (GO-2026-6061) ([#20](https://github.com/MewsSystems/terraform-provider-azsqlaccess/issues/20)) ([6edf258](https://github.com/MewsSystems/terraform-provider-azsqlaccess/commit/6edf2586f1a8906f2649cf64b51dc0830e8ac824))
+
 ## [0.2.1](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.0...v0.2.1) (2026-08-21)
 
 
