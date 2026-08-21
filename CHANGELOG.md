@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.1.1...v0.2.0) (2026-08-21)
+
+
+### Features
+
+* **postgres:** adding login username to postgres engine ([d8b4761](https://github.com/MewsSystems/terraform-provider-azsqlaccess/commit/d8b4761a6d391d32f0fa24b14b62c0e22bd5c1b3))
+* **postgres:** adding login username to postgres engine ([d8b4761](https://github.com/MewsSystems/terraform-provider-azsqlaccess/commit/d8b4761a6d391d32f0fa24b14b62c0e22bd5c1b3))
+* **postgres:** adding login username to postgres engine ([daf95f4](https://github.com/MewsSystems/terraform-provider-azsqlaccess/commit/daf95f4ac0f41b7a10182eaaba71a4c6babaf8ae))
+
 ## [0.1.1](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.1.0...v0.1.1) (2026-08-01)
 
 
