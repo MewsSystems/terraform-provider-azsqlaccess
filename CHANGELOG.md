@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.2...v0.2.3) (2026-08-31)
+
+
+### Bug Fixes
+
+* add plan pre-filght checks ([#24](https://github.com/MewsSystems/terraform-provider-azsqlaccess/issues/24)) ([41d1a53](https://github.com/MewsSystems/terraform-provider-azsqlaccess/commit/41d1a539b97e323fbf3b11aacacbce9c5a414b23))
+
 ## [0.2.2](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.1...v0.2.2) (2026-08-21)
 
 
