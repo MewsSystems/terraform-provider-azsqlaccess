@@ -107,6 +107,11 @@ func (c *Connector) CreateUser(ctx context.Context, user *database.User) error {
 }
 
 func (c *Connector) GetUser(ctx context.Context, name string) (*database.User, error) {
+	// A miss below only means "deleted" once pg_roles is known to be readable.
+	if err := c.CheckReadAccess(ctx, database.ReadScopeUser); err != nil {
+		return nil, err
+	}
+
 	u := &database.User{Name: name}
 	err := readUserInto(ctx, c.pool, u)
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -95,6 +95,12 @@ func (c *Connector) CreateUser(ctx context.Context, user *database.User) error {
 }
 
 func (c *Connector) GetUser(ctx context.Context, name string) (*database.User, error) {
+	// Without this, "no rows" below could mean "not allowed to look" and the
+	// caller would drop a live user from state.
+	if err := c.CheckReadAccess(ctx, database.ReadScopeUser); err != nil {
+		return nil, err
+	}
+
 	u := &database.User{Name: name}
 	err := readUserInto(ctx, c.db, u)
 	if errors.Is(err, sql.ErrNoRows) {

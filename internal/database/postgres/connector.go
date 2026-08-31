@@ -62,11 +62,13 @@ const (
 // mu protects pools against concurrent access during parallel applies.
 // loginUsername, when non-empty, overrides the token-derived connection role
 // name — see applyTokenAuth.
+// gates memoises the catalog read-permission probe per (server, database).
 type Factory struct {
 	cred          azcore.TokenCredential
 	loginUsername string
 	mu            sync.Mutex
 	pools         map[string]*pgxpool.Pool
+	gates         map[string]*readAccessGate
 }
 
 // NewFactory wraps a pre-built credential. The credential is constructed once
@@ -80,6 +82,7 @@ func NewFactory(cred azcore.TokenCredential, loginUsername string) *Factory {
 		cred:          cred,
 		loginUsername: loginUsername,
 		pools:         make(map[string]*pgxpool.Pool),
+		gates:         make(map[string]*readAccessGate),
 	}
 }
 
@@ -99,15 +102,36 @@ func (f *Factory) GetConnector(server, database string) (database_pkg.DatabaseCo
 		return nil, err
 	}
 
+	// Keyed on the target database, not the system one: the catalog reads it
+	// guards always run against the target pool.
+	gate := f.cachedGate(server, database)
+
 	// The newSysPool closure also goes through the cache, so repeated CreateUser
 	// calls on the same server reuse the same system pool.
 	f2 := f
 	return &Connector{
 		pool: pool,
+		gate: gate,
 		newSysPool: func() (pgxConn, error) {
 			return f2.cachedPool(server, "postgres")
 		},
 	}, nil
+}
+
+// cachedGate returns the shared permission gate for (server, database),
+// creating it on first call.
+func (f *Factory) cachedGate(server, database string) *readAccessGate {
+	key := server + "\x00" + database
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if gate, ok := f.gates[key]; ok {
+		return gate
+	}
+	gate := &readAccessGate{}
+	f.gates[key] = gate
+	return gate
 }
 
 // cachedPool returns an existing pool for (server, database) or creates and
@@ -242,8 +266,11 @@ func usernameFromToken(tokenStr string) (string, error) {
 // the system database pool. Both pools are cached by the Factory — do not close
 // them here. Close is a no-op so that resource callers can defer conn.Close()
 // without invalidating the cached pool.
+// gate is Factory-owned and shared by every Connector on the same database,
+// which keeps the permission probe to one per database per run.
 type Connector struct {
 	pool       pgxConn
+	gate       *readAccessGate
 	newSysPool func() (pgxConn, error)
 }
 

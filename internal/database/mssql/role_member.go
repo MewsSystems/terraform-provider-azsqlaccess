@@ -14,7 +14,15 @@ import (
 
 // GetRoleMember checks whether member is already in role.
 // Returns nil if the membership does not exist (not an error — just absent).
+//
+// That absence is only trustworthy once visibility is proven, hence the gate.
+// Anything privileged enough to run ALTER ROLE ADD MEMBER already holds VIEW
+// DEFINITION, so gating the pre-checks in Create/DeleteRoleMember costs nothing.
 func (c *Connector) GetRoleMember(ctx context.Context, role, member string) (*database_pkg.RoleMember, error) {
+	if err := c.CheckReadAccess(ctx, database_pkg.ReadScopeRoleMember); err != nil {
+		return nil, err
+	}
+
 	const q = `
 		SELECT 1
 		FROM sys.database_role_members rm
