@@ -13,8 +13,13 @@ import (
 )
 
 // GetRoleMember checks whether member is already in role.
-// Returns nil if the membership does not exist (not an error — just absent).
+// Returns nil if the membership does not exist (not an error — just absent),
+// which is only trustworthy once the catalogs behind it are known to be readable.
 func (c *Connector) GetRoleMember(ctx context.Context, role, member string) (*database.RoleMember, error) {
+	if err := c.CheckReadAccess(ctx, database.ReadScopeRoleMember); err != nil {
+		return nil, err
+	}
+
 	var exists int
 	err := c.pool.QueryRow(ctx, `
 		SELECT 1

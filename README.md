@@ -50,6 +50,7 @@ The engine is selected **once** in `provider.Configure()` and injected into all 
 | `CreateRoleMember` | `ALTER ROLE [role] ADD MEMBER [member]` | `GRANT "role" TO "member"` |
 | `DeleteRoleMember` | `ALTER ROLE [role] DROP MEMBER [member]` | `REVOKE "role" FROM "member"` |
 | `GetRoleMember` | `SELECT ... FROM sys.database_role_members` | `SELECT ... FROM pg_auth_members` |
+| `CheckReadAccess` | `HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', ...)` | `has_table_privilege(current_user, ...)` |
 
 ---
 
@@ -342,6 +343,32 @@ provider "azsqlaccess" {
 ```
 
 Leave `login_username` unset to connect as the caller itself, which requires that principal to be an administrator in its own right. Connecting as the group is generally preferable for a deploying identity: objects it creates are owned by the group role, so rotating the identity behind it does not strand ownership.
+
+---
+
+## Required database permissions
+
+The connecting identity must be able to **see** the catalog rows behind the resources it manages, not merely to modify them. The provider verifies this once per `(server, database)` on first use and fails with an actionable error when the permission is absent.
+
+This check exists because the catalogs are fail-open on Azure SQL. An identity without the permission does not get an error, it gets *fewer rows* — absence and invisibility are byte-identical responses. Left unchecked, an under-privileged `terraform plan` reads existing users as absent, drops them from state and proposes to recreate them. A plan is expected to be read-only, which makes that the worst kind of failure: silent, and state-mutating.
+
+| Engine | Resource | Required |
+|---|---|---|
+| MSSQL | `azsqlaccess_user` | `VIEW DEFINITION` on the database, or `ALTER ANY USER` |
+| MSSQL | `azsqlaccess_database_role_member` | `VIEW DEFINITION` on the database |
+| PostgreSQL | both | `SELECT` on `pg_catalog.pg_roles` and `pg_catalog.pg_auth_members` (granted to `PUBLIC` by default) |
+
+`HAS_PERMS_BY_NAME` evaluates *effective* permissions, so `db_owner`, `dbo` and the Entra administrator all satisfy the MSSQL requirement with no explicit grant. The two MSSQL rows differ because `ALTER ANY USER` reveals other users but not their role memberships — `db_accessadmin` lands exactly there.
+
+For a least-privilege plan identity, such as a CI service principal that only ever reads, the minimal grant is:
+
+```sql
+GRANT VIEW DEFINITION TO [myapp-identity];
+```
+
+`db_securityadmin` also carries `VIEW DEFINITION`, but it brings `ALTER ANY ROLE` with it and Microsoft flags it as a privilege-elevation risk. Prefer the explicit grant, or a custom role that carries `VIEW DEFINITION` and nothing else.
+
+Write permissions are deliberately not checked. They already fail loudly with a real SQL error, so there is nothing for the provider to add.
 
 ---
 

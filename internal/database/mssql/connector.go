@@ -33,18 +33,24 @@ const tokenAcquireTimeout = 30 * time.Second
 // by "server\x00database". Pools are reused across all CRUD operations on the
 // same (server, database) pair within a single Terraform apply — avoiding
 // repeated TCP connect + Entra token acquisition on every resource operation.
-// mu protects pools against concurrent access during parallel applies.
+// gates is keyed identically and memoises the catalog read-permission probe.
+// mu protects both maps against concurrent access during parallel applies.
 type Factory struct {
 	cred  azcore.TokenCredential
 	mu    sync.Mutex
 	pools map[string]*sql.DB
+	gates map[string]*readAccessGate
 }
 
 // NewFactory wraps a pre-built credential. The credential is constructed once
 // by the provider via database.BuildEntraCredential and shared with the
 // postgres factory so the auth path is identical across engines.
 func NewFactory(cred azcore.TokenCredential) *Factory {
-	return &Factory{cred: cred, pools: make(map[string]*sql.DB)}
+	return &Factory{
+		cred:  cred,
+		pools: make(map[string]*sql.DB),
+		gates: make(map[string]*readAccessGate),
+	}
 }
 
 // GetConnector returns a Connector backed by a cached *sql.DB for the given
@@ -63,8 +69,14 @@ func (f *Factory) GetConnector(server, database string) (database_pkg.DatabaseCo
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	gate, ok := f.gates[key]
+	if !ok {
+		gate = &readAccessGate{}
+		f.gates[key] = gate
+	}
+
 	if db, ok := f.pools[key]; ok {
-		return &Connector{db: db}, nil
+		return &Connector{db: db, gate: gate}, nil
 	}
 
 	dsn := buildDSN(server, database)
@@ -78,7 +90,7 @@ func (f *Factory) GetConnector(server, database string) (database_pkg.DatabaseCo
 
 	db := sql.OpenDB(connector)
 	f.pools[key] = db
-	return &Connector{db: db}, nil
+	return &Connector{db: db, gate: gate}, nil
 }
 
 // acquireToken fetches a fresh Azure SQL access token via the shared
@@ -109,8 +121,12 @@ func buildDSN(server, database string) string {
 // The pool is owned by the Factory and shared across CRUD calls — do not
 // close it here. Close is a no-op so that resource callers can defer
 // conn.Close() without invalidating the cached pool.
+//
+// gate is likewise Factory-owned and shared by every Connector on the same
+// database, which keeps the permission probe to one per database per run.
 type Connector struct {
-	db *sql.DB
+	db   *sql.DB
+	gate *readAccessGate
 }
 
 func (c *Connector) Close() error {

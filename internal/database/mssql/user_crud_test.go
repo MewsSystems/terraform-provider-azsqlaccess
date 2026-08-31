@@ -34,7 +34,21 @@ func newMockedConnector(t *testing.T) (*Connector, sqlmock.Sqlmock) {
 		}
 		_ = db.Close()
 	})
-	return &Connector{db: db}, mock
+	return &Connector{db: db, gate: grantedGate()}, mock
+}
+
+// grantedGate is pre-resolved to full visibility so CRUD tests exercise the
+// query under test, not the probe. The probe is covered in preflight_test.go.
+func grantedGate() *readAccessGate {
+	return &readAccessGate{
+		resolved: true,
+		access: catalogAccess{
+			viewDefinition: true,
+			alterAnyUser:   true,
+			userName:       "myapp-identity",
+			databaseName:   "mydb",
+		},
+	}
 }
 
 const readUserSQL = `

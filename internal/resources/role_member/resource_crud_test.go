@@ -33,6 +33,10 @@ type mockConn struct {
 	deleteCalled int
 }
 
+// No-op: the real connectors call this from inside GetRoleMember, so the
+// resource layer never invokes it directly.
+func (m *mockConn) CheckReadAccess(_ context.Context, _ database.ReadScope) error { return nil }
+
 func (m *mockConn) GetUser(_ context.Context, _ string) (*database.User, error) { return nil, nil }
 func (m *mockConn) CreateUser(_ context.Context, _ *database.User) error        { return nil }
 func (m *mockConn) UpdateUser(_ context.Context, _ *database.User) error        { return nil }

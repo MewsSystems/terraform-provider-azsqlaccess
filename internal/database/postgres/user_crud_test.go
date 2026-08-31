@@ -51,9 +51,23 @@ func newMockedConnector(t *testing.T) (*Connector, pgxmock.PgxPoolIface, pgxmock
 
 	c := &Connector{
 		pool:       pool,
+		gate:       grantedGate(),
 		newSysPool: func() (pgxConn, error) { return sys, nil },
 	}
 	return c, pool, sys
+}
+
+// grantedGate is pre-resolved to full visibility so CRUD tests exercise the
+// query under test, not the probe. The probe is covered in preflight_test.go.
+func grantedGate() *readAccessGate {
+	return &readAccessGate{
+		resolved: true,
+		access: catalogAccess{
+			pgRoles:       true,
+			pgAuthMembers: true,
+			userName:      "myapp-identity",
+		},
+	}
 }
 
 func expectPgaadAvailable(sys pgxmock.PgxPoolIface) {
