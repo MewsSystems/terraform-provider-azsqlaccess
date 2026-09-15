@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/mews/terraform-provider-azsqlaccess/internal/database"
-	"github.com/pashagolub/pgxmock/v4"
+	"github.com/pashagolub/pgxmock/v5"
 )
 
 func expectProbe(pool pgxmock.PgxPoolIface, pgRoles, pgAuthMembers bool) {
