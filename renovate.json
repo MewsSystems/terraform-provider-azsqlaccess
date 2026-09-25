@@ -10,5 +10,16 @@
     "gomod",
     "github-actions"
   ],
-  "mode": "full"
+  "mode": "full",
+  "packageRules": [
+    {
+      "groupName": "terraform-plugin",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "github.com/hashicorp/terraform-plugin-**"
+      ]
+    }
+  ]
 }
