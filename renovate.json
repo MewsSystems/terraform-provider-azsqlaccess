@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "local>MewsSystems/renovate-config"
+  ],
+  "enabledManagers": [
+    "terraform",
+    "terraform-version",
+    "custom.regex",
+    "github-actions",
+    "gomod"
+  ],
+  "packageRules": [
+    {
+      "groupName": "terraform-plugin",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "github.com/hashicorp/terraform-plugin-*"
+      ]
+    },
+    {
+      "groupName": "github-actions",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "*"
+      ]
+    }
+  ],
+  "mode": "full"
+}
