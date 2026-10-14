@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 )
 
 // Happy-trail acceptance tests for azsqlaccess_user.
@@ -147,7 +148,7 @@ func TestAccUser_group_postgres(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccUserConfig_group_postgres(),
+				Config: testAccUserConfig_group_postgres(os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE")),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("azsqlaccess_user.test", "type", "group"),
 					resource.TestCheckResourceAttr("azsqlaccess_user.test", "name", os.Getenv("AZSQLACCESS_TEST_GROUP_NAME")),
@@ -165,6 +166,14 @@ func TestAccUser_group_postgres(t *testing.T) {
 					os.Getenv("AZSQLACCESS_TEST_GROUP_NAME"),
 					os.Getenv("AZSQLACCESS_TEST_GROUP_OBJECT_ID"),
 				),
+			},
+			{
+				Config: testAccUserConfig_group_postgres("postgres"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("azsqlaccess_user.test", plancheck.ResourceActionUpdate),
+					},
+				},
 			},
 		},
 	})
@@ -332,7 +341,7 @@ resource "azsqlaccess_user" "test" {
 	)
 }
 
-func testAccUserConfig_group_postgres() string {
+func testAccUserConfig_group_postgres(db string) string {
 	return postgresProviderConfig + fmt.Sprintf(`
 resource "azsqlaccess_user" "test" {
   server    = %q
@@ -343,7 +352,7 @@ resource "azsqlaccess_user" "test" {
 }
 `,
 		os.Getenv("AZSQLACCESS_TEST_POSTGRES_SERVER"),
-		os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE"),
+		db,
 		os.Getenv("AZSQLACCESS_TEST_GROUP_NAME"),
 		os.Getenv("AZSQLACCESS_TEST_GROUP_OBJECT_ID"),
 	)

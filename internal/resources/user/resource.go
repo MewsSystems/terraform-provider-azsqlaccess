@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/mews/terraform-provider-azsqlaccess/internal/database"
+	"github.com/mews/terraform-provider-azsqlaccess/internal/resources/dbscope"
 	"github.com/mews/terraform-provider-azsqlaccess/internal/validators"
 )
 
@@ -25,6 +26,7 @@ var _ resource.Resource = &UserResource{}
 var _ resource.ResourceWithConfigure = &UserResource{}
 var _ resource.ResourceWithImportState = &UserResource{}
 var _ resource.ResourceWithValidateConfig = &UserResource{}
+var _ resource.ResourceWithModifyPlan = &UserResource{}
 
 // UserResource manages a azsqlaccess_user resource.
 type UserResource struct {
@@ -60,11 +62,10 @@ func (r *UserResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				},
 			},
 			"database": schema.StringAttribute{
-				Required:            true,
-				MarkdownDescription: "Name of the database in which to create the user.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
+				Required: true,
+				MarkdownDescription: "Database the provider connects through. On Azure SQL the contained user lives in " +
+					"this database, and changing it forces resource replacement. On PostgreSQL a role belongs to the server, " +
+					"so changing it only changes where the provider connects and is applied in place.",
 			},
 			"type": schema.StringAttribute{
 				Required: true,
@@ -186,6 +187,29 @@ func (r *UserResource) ValidateConfig(ctx context.Context, req resource.Validate
 	}
 }
 
+// ModifyPlan plans a database change in place or as a replacement, per engine.
+func (r *UserResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+	var state, plan userModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() || plan.Database.Equal(state.Database) {
+		return
+	}
+	dbscope.PlanDatabaseChange(ctx, r.factory, resp)
+}
+
+// userID mirrors the import ID: server/database/user/name, or .../type/name/object_id.
+func userID(m userModel) string {
+	id := m.Server.ValueString() + "/" + m.Database.ValueString() + "/" + m.Type.ValueString() + "/" + m.Name.ValueString()
+	if m.Type.ValueString() != "user" {
+		id += "/" + m.ObjectID.ValueString()
+	}
+	return id
+}
+
 // Configure receives the ConnectorFactory stored by the provider during Configure.
 func (r *UserResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
@@ -236,18 +260,7 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	// ID format mirrors the import ID so that existing state is always importable:
-	//   type=user              → server/database/user/name
-	//   type=group/sp          → server/database/type/name/object_id
-	var resourceID string
-	if plan.Type.ValueString() == "user" {
-		resourceID = plan.Server.ValueString() + "/" + plan.Database.ValueString() + "/" +
-			plan.Type.ValueString() + "/" + plan.Name.ValueString()
-	} else {
-		resourceID = plan.Server.ValueString() + "/" + plan.Database.ValueString() + "/" +
-			plan.Type.ValueString() + "/" + plan.Name.ValueString() + "/" + plan.ObjectID.ValueString()
-	}
-	plan.ID = types.StringValue(resourceID)
+	plan.ID = types.StringValue(userID(plan))
 	plan.PrincipalID = types.Int64Value(user.PrincipalID)
 	if user.DefaultSchema != "" {
 		plan.DefaultSchema = types.StringValue(user.DefaultSchema)
@@ -329,6 +342,7 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	}
 
 	plan.DefaultSchema = types.StringValue(user.DefaultSchema)
+	plan.ID = types.StringValue(userID(plan))
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 

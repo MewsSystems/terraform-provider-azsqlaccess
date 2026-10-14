@@ -433,3 +433,77 @@ func TestUserResource_Delete_ConnectorError(t *testing.T) {
 		t.Fatalf("expected error from connector")
 	}
 }
+
+// ---------- ModifyPlan / database change -------------------------------------
+
+func modifyPlan(t *testing.T, f database.ConnectorFactory, oldDB, newDB string) *resource.ModifyPlanResponse {
+	t.Helper()
+	ctx := context.Background()
+	base := userModel{
+		ID:     stringValue("myserver.postgres.database.azure.com/" + oldDB + "/group/db.reader/00000000-0000-0000-0000-000000000000"),
+		Server: stringValue("myserver.postgres.database.azure.com"), Database: stringValue(oldDB),
+		Type: stringValue("group"), Name: stringValue("db.reader"),
+		ObjectID:      stringValue("00000000-0000-0000-0000-000000000000"),
+		DefaultSchema: stringValue("public"), PrincipalID: types.Int64Value(1),
+	}
+	next := base
+	next.Database = stringValue(newDB)
+	plan := planFromModel(ctx, t, next)
+	resp := &resource.ModifyPlanResponse{Plan: plan}
+	r := &UserResource{factory: f}
+	r.ModifyPlan(ctx, resource.ModifyPlanRequest{State: stateFromModel(ctx, t, base), Plan: plan}, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("ModifyPlan: %v", resp.Diagnostics)
+	}
+	return resp
+}
+
+func TestUserResource_ModifyPlan_DatabaseChange_ServerScoped_InPlace(t *testing.T) {
+	resp := modifyPlan(t, &mockFactory{serverScoped: true}, "mydb", "postgres")
+	if len(resp.RequiresReplace) != 0 {
+		t.Fatalf("RequiresReplace = %v, want none", resp.RequiresReplace)
+	}
+}
+
+func TestUserResource_ModifyPlan_DatabaseChange_SQLServer_RequiresReplace(t *testing.T) {
+	resp := modifyPlan(t, &mockFactory{serverScoped: false}, "mydb", "otherdb")
+	if !resp.RequiresReplace.Contains(path.Root("database")) {
+		t.Fatalf("RequiresReplace = %v, want database", resp.RequiresReplace)
+	}
+}
+
+func TestUserResource_ModifyPlan_SameDatabase_NoChange(t *testing.T) {
+	resp := modifyPlan(t, &mockFactory{serverScoped: false}, "mydb", "mydb")
+	if len(resp.RequiresReplace) != 0 {
+		t.Fatalf("RequiresReplace = %v, want none", resp.RequiresReplace)
+	}
+}
+
+func TestUserResource_Update_DatabaseChange_ConnectsToNewDatabaseAndRecomputesID(t *testing.T) {
+	ctx := context.Background()
+	var gotDB string
+	conn := &mockConn{}
+	f := &mockFactory{get: func(_, d string) (database.DatabaseConnector, error) { gotDB = d; return conn, nil }}
+	plan := userModel{
+		ID:     types.StringUnknown(),
+		Server: stringValue("myserver.postgres.database.azure.com"), Database: stringValue("postgres"),
+		Type: stringValue("group"), Name: stringValue("db.reader"),
+		ObjectID:      stringValue("00000000-0000-0000-0000-000000000000"),
+		DefaultSchema: stringValue("public"), PrincipalID: types.Int64Value(1),
+	}
+	r := &UserResource{factory: f}
+	resp := &resource.UpdateResponse{State: emptyState(ctx, t, userSchema(t))}
+	r.Update(ctx, resource.UpdateRequest{Plan: planFromModel(ctx, t, plan)}, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update: %v", resp.Diagnostics)
+	}
+	if gotDB != "postgres" {
+		t.Fatalf("connected to %q, want postgres", gotDB)
+	}
+	var got userModel
+	resp.State.Get(ctx, &got)
+	want := "myserver.postgres.database.azure.com/postgres/group/db.reader/00000000-0000-0000-0000-000000000000"
+	if got.ID.ValueString() != want {
+		t.Fatalf("id = %q, want %q", got.ID.ValueString(), want)
+	}
+}
