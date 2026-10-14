@@ -3,12 +3,12 @@
 page_title: "azsqlaccess_user Resource - azsqlaccess"
 subcategory: ""
 description: |-
-  Creates an Entra identity as a contained user inside a specific database. Supports member users (type = "user"), security groups (type = "group"), and service principals / managed identities (type = "service_principal").
+  Creates an Entra identity as a database principal. On Azure SQL it is a contained user in database. On PostgreSQL it is a server-wide role, and database is where the provider connects. Supports member users (type = "user"), security groups (type = "group"), and service principals / managed identities (type = "service_principal").
 ---
 
 # azsqlaccess_user (Resource)
 
-Creates an Entra identity as a contained user inside a specific database. Supports member users (`type = "user"`), security groups (`type = "group"`), and service principals / managed identities (`type = "service_principal"`).
+Creates an Entra identity as a database principal. On Azure SQL it is a contained user in `database`. On PostgreSQL it is a server-wide role, and `database` is where the provider connects. Supports member users (`type = "user"`), security groups (`type = "group"`), and service principals / managed identities (`type = "service_principal"`).
 
 ## Example Usage
 

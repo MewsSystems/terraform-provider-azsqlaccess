@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -143,6 +144,9 @@ func TestAccUser_user_postgres(t *testing.T) {
 }
 
 func TestAccUser_group_postgres(t *testing.T) {
+	if os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE") == "postgres" {
+		t.Skip("the database-move step needs AZSQLACCESS_TEST_POSTGRES_DATABASE to differ from postgres")
+	}
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -174,6 +178,15 @@ func TestAccUser_group_postgres(t *testing.T) {
 						plancheck.ExpectResourceAction("azsqlaccess_user.test", plancheck.ResourceActionUpdate),
 					},
 				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("azsqlaccess_user.test", "database", "postgres"),
+					resource.TestCheckResourceAttrWith("azsqlaccess_user.test", "id", func(v string) error {
+						if !strings.Contains(v, "/postgres/") {
+							return fmt.Errorf("id %q does not contain /postgres/", v)
+						}
+						return nil
+					}),
+				),
 			},
 		},
 	})

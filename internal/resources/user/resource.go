@@ -43,7 +43,8 @@ func (r *UserResource) Metadata(_ context.Context, req resource.MetadataRequest,
 
 func (r *UserResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Creates an Entra identity as a contained user inside a specific database. " +
+		MarkdownDescription: "Creates an Entra identity as a database principal. On Azure SQL it is a contained user in `database`. " +
+			"On PostgreSQL it is a server-wide role, and `database` is where the provider connects. " +
 			"Supports member users (`type = \"user\"`), security groups (`type = \"group\"`), " +
 			"and service principals / managed identities (`type = \"service_principal\"`).",
 
@@ -310,8 +311,9 @@ func (r *UserResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 }
 
 func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan userModel
+	var plan, state userModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -326,22 +328,42 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	}
 	defer conn.Close()
 
-	user := &database.User{
-		Name:          plan.Name.ValueString(),
-		Type:          plan.Type.ValueString(),
-		DefaultSchema: plan.DefaultSchema.ValueString(),
+	if plan.DefaultSchema.Equal(state.DefaultSchema) {
+		// Database-only move: confirm the principal is visible through the new database, change nothing.
+		u, err := conn.GetUser(ctx, plan.Name.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddError(
+				"Failed to read database user",
+				fmt.Sprintf("user %q in database %q on %q: %s",
+					plan.Name.ValueString(), plan.Database.ValueString(), plan.Server.ValueString(), err),
+			)
+			return
+		}
+		if u == nil {
+			resp.Diagnostics.AddError(
+				"Database user not found",
+				fmt.Sprintf("user %q is not visible from database %q on %q",
+					plan.Name.ValueString(), plan.Database.ValueString(), plan.Server.ValueString()),
+			)
+			return
+		}
+	} else {
+		user := &database.User{
+			Name:          plan.Name.ValueString(),
+			Type:          plan.Type.ValueString(),
+			DefaultSchema: plan.DefaultSchema.ValueString(),
+		}
+		if err := conn.UpdateUser(ctx, user); err != nil {
+			resp.Diagnostics.AddError(
+				"Failed to update database user",
+				fmt.Sprintf("user %q in database %q on %q: %s",
+					plan.Name.ValueString(), plan.Database.ValueString(), plan.Server.ValueString(), err),
+			)
+			return
+		}
+		plan.DefaultSchema = types.StringValue(user.DefaultSchema)
 	}
 
-	if err := conn.UpdateUser(ctx, user); err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to update database user",
-			fmt.Sprintf("user %q in database %q on %q: %s",
-				plan.Name.ValueString(), plan.Database.ValueString(), plan.Server.ValueString(), err),
-		)
-		return
-	}
-
-	plan.DefaultSchema = types.StringValue(user.DefaultSchema)
 	plan.ID = types.StringValue(userID(plan))
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }

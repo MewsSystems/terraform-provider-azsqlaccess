@@ -15,8 +15,8 @@ import (
 
 // PlanDatabaseChange is called once a resource's database differs from state. On an
 // engine whose principals are server-scoped the change only moves the connection, so it
-// updates in place and the computed id is recomputed at apply; otherwise, or when the
-// provider is not configured yet, the resource is replaced.
+// updates in place and the computed id is recomputed at apply; otherwise the resource is
+// replaced. A nil factory is treated as not server-scoped.
 func PlanDatabaseChange(ctx context.Context, factory database.ConnectorFactory, resp *resource.ModifyPlanResponse) {
 	if factory == nil || !factory.ServerScopedPrincipals() {
 		resp.RequiresReplace = append(resp.RequiresReplace, path.Root("database"))

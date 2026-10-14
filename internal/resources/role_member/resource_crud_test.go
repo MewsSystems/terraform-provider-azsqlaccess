@@ -299,8 +299,14 @@ func rmModifyPlan(t *testing.T, f database.ConnectorFactory, oldDB, newDB string
 }
 
 func TestRoleMemberResource_ModifyPlan_DatabaseChange_ServerScoped_InPlace(t *testing.T) {
-	if r := rmModifyPlan(t, &mockFactory{serverScoped: true}, "mydb", "postgres"); len(r.RequiresReplace) != 0 {
+	r := rmModifyPlan(t, &mockFactory{serverScoped: true}, "mydb", "postgres")
+	if len(r.RequiresReplace) != 0 {
 		t.Fatalf("RequiresReplace = %v, want none", r.RequiresReplace)
+	}
+	var id types.String
+	r.Diagnostics.Append(r.Plan.GetAttribute(context.Background(), path.Root("id"), &id)...)
+	if !id.IsUnknown() {
+		t.Fatalf("planned id = %v, want unknown", id)
 	}
 }
 

@@ -344,13 +344,18 @@ func TestUserResource_Update_Success(t *testing.T) {
 		},
 	}
 	r := &UserResource{factory: fixedFactory(conn)}
+	oldState := stateFromModel(ctx, t, userModel{
+		Server: types.StringValue("myserver.database.windows.net"), Database: types.StringValue("mydb"),
+		Type: types.StringValue("user"), Name: types.StringValue("juan.perez@milanesa.com"),
+		DefaultSchema: types.StringValue("dbo"),
+	})
 	plan := planFromModel(ctx, t, userModel{
 		Server: types.StringValue("myserver.database.windows.net"), Database: types.StringValue("mydb"),
 		Type: types.StringValue("user"), Name: types.StringValue("juan.perez@milanesa.com"),
 		DefaultSchema: types.StringValue("myschema"),
 	})
 	resp := &resource.UpdateResponse{State: emptyState(ctx, t, userSchema(t))}
-	r.Update(ctx, resource.UpdateRequest{Plan: plan}, resp)
+	r.Update(ctx, resource.UpdateRequest{Plan: plan, State: oldState}, resp)
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("unexpected: %v", resp.Diagnostics)
 	}
@@ -359,12 +364,18 @@ func TestUserResource_Update_Success(t *testing.T) {
 func TestUserResource_Update_FactoryError(t *testing.T) {
 	ctx := context.Background()
 	r := &UserResource{factory: errFactory(errors.New("boom"))}
+	oldState := stateFromModel(ctx, t, userModel{
+		Server: types.StringValue("myserver.database.windows.net"), Database: types.StringValue("mydb"),
+		Type: types.StringValue("user"), Name: types.StringValue("juan.perez@milanesa.com"),
+		DefaultSchema: types.StringValue("dbo"),
+	})
 	plan := planFromModel(ctx, t, userModel{
 		Server: types.StringValue("myserver.database.windows.net"), Database: types.StringValue("mydb"),
 		Type: types.StringValue("user"), Name: types.StringValue("juan.perez@milanesa.com"),
+		DefaultSchema: types.StringValue("myschema"),
 	})
 	resp := &resource.UpdateResponse{State: emptyState(ctx, t, userSchema(t))}
-	r.Update(ctx, resource.UpdateRequest{Plan: plan}, resp)
+	r.Update(ctx, resource.UpdateRequest{Plan: plan, State: oldState}, resp)
 	if !resp.Diagnostics.HasError() {
 		t.Fatalf("expected error from factory")
 	}
@@ -374,12 +385,18 @@ func TestUserResource_Update_ConnectorError(t *testing.T) {
 	ctx := context.Background()
 	conn := &mockConn{updateFn: func(context.Context, *database.User) error { return errors.New("update-failed") }}
 	r := &UserResource{factory: fixedFactory(conn)}
+	oldState := stateFromModel(ctx, t, userModel{
+		Server: types.StringValue("myserver.database.windows.net"), Database: types.StringValue("mydb"),
+		Type: types.StringValue("user"), Name: types.StringValue("juan.perez@milanesa.com"),
+		DefaultSchema: types.StringValue("dbo"),
+	})
 	plan := planFromModel(ctx, t, userModel{
 		Server: types.StringValue("myserver.database.windows.net"), Database: types.StringValue("mydb"),
 		Type: types.StringValue("user"), Name: types.StringValue("juan.perez@milanesa.com"),
+		DefaultSchema: types.StringValue("myschema"),
 	})
 	resp := &resource.UpdateResponse{State: emptyState(ctx, t, userSchema(t))}
-	r.Update(ctx, resource.UpdateRequest{Plan: plan}, resp)
+	r.Update(ctx, resource.UpdateRequest{Plan: plan, State: oldState}, resp)
 	if !resp.Diagnostics.HasError() {
 		t.Fatalf("expected error from connector")
 	}
@@ -463,6 +480,11 @@ func TestUserResource_ModifyPlan_DatabaseChange_ServerScoped_InPlace(t *testing.
 	if len(resp.RequiresReplace) != 0 {
 		t.Fatalf("RequiresReplace = %v, want none", resp.RequiresReplace)
 	}
+	var id types.String
+	resp.Diagnostics.Append(resp.Plan.GetAttribute(context.Background(), path.Root("id"), &id)...)
+	if !id.IsUnknown() {
+		t.Fatalf("planned id = %v, want unknown", id)
+	}
 }
 
 func TestUserResource_ModifyPlan_DatabaseChange_SQLServer_RequiresReplace(t *testing.T) {
@@ -479,31 +501,69 @@ func TestUserResource_ModifyPlan_SameDatabase_NoChange(t *testing.T) {
 	}
 }
 
-func TestUserResource_Update_DatabaseChange_ConnectsToNewDatabaseAndRecomputesID(t *testing.T) {
+func pgUserModels(oldSchema, newSchema string) (userModel, userModel) {
+	mk := func(db, schema string, id types.String) userModel {
+		return userModel{
+			ID:     id,
+			Server: stringValue("myserver.postgres.database.azure.com"), Database: stringValue(db),
+			Type: stringValue("group"), Name: stringValue("db.reader"),
+			ObjectID:      stringValue("00000000-0000-0000-0000-000000000000"),
+			DefaultSchema: stringValue(schema), PrincipalID: types.Int64Value(1),
+		}
+	}
+	return mk("mydb", oldSchema, stringValue("old")), mk("postgres", newSchema, types.StringUnknown())
+}
+
+func TestUserResource_Update_DatabaseOnly_ReadsThroughNewDatabaseWithoutAlter(t *testing.T) {
 	ctx := context.Background()
 	var gotDB string
-	conn := &mockConn{}
-	f := &mockFactory{get: func(_, d string) (database.DatabaseConnector, error) { gotDB = d; return conn, nil }}
-	plan := userModel{
-		ID:     types.StringUnknown(),
-		Server: stringValue("myserver.postgres.database.azure.com"), Database: stringValue("postgres"),
-		Type: stringValue("group"), Name: stringValue("db.reader"),
-		ObjectID:      stringValue("00000000-0000-0000-0000-000000000000"),
-		DefaultSchema: stringValue("public"), PrincipalID: types.Int64Value(1),
+	var gets, updates int
+	conn := &mockConn{
+		getFn: func(_ context.Context, name string) (*database.User, error) {
+			gets++
+			return &database.User{Name: name}, nil
+		},
+		updateFn: func(context.Context, *database.User) error { updates++; return nil },
 	}
-	r := &UserResource{factory: f}
+	f := &mockFactory{get: func(_, d string) (database.DatabaseConnector, error) { gotDB = d; return conn, nil }}
+	oldM, newM := pgUserModels("public", "public")
 	resp := &resource.UpdateResponse{State: emptyState(ctx, t, userSchema(t))}
-	r.Update(ctx, resource.UpdateRequest{Plan: planFromModel(ctx, t, plan)}, resp)
+	(&UserResource{factory: f}).Update(ctx, resource.UpdateRequest{Plan: planFromModel(ctx, t, newM), State: stateFromModel(ctx, t, oldM)}, resp)
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("Update: %v", resp.Diagnostics)
 	}
-	if gotDB != "postgres" {
-		t.Fatalf("connected to %q, want postgres", gotDB)
+	if gotDB != "postgres" || gets != 1 || updates != 0 {
+		t.Fatalf("db=%q gets=%d updates=%d, want postgres/1/0", gotDB, gets, updates)
 	}
 	var got userModel
 	resp.State.Get(ctx, &got)
 	want := "myserver.postgres.database.azure.com/postgres/group/db.reader/00000000-0000-0000-0000-000000000000"
 	if got.ID.ValueString() != want {
 		t.Fatalf("id = %q, want %q", got.ID.ValueString(), want)
+	}
+	if got.DefaultSchema.ValueString() != "public" || got.PrincipalID.ValueInt64() != 1 {
+		t.Fatalf("default_schema/principal_id not kept: %v", got)
+	}
+}
+
+func TestUserResource_Update_DefaultSchemaChange_CallsUpdateUser(t *testing.T) {
+	ctx := context.Background()
+	var updates int
+	conn := &mockConn{updateFn: func(context.Context, *database.User) error { updates++; return nil }}
+	oldM, newM := pgUserModels("public", "myschema")
+	resp := &resource.UpdateResponse{State: emptyState(ctx, t, userSchema(t))}
+	(&UserResource{factory: fixedFactory(conn)}).Update(ctx, resource.UpdateRequest{Plan: planFromModel(ctx, t, newM), State: stateFromModel(ctx, t, oldM)}, resp)
+	if resp.Diagnostics.HasError() || updates != 1 {
+		t.Fatalf("updates=%d diags=%v, want 1 and none", updates, resp.Diagnostics)
+	}
+}
+
+func TestUserResource_Update_DatabaseOnly_MissingUser_Errors(t *testing.T) {
+	ctx := context.Background()
+	oldM, newM := pgUserModels("public", "public")
+	resp := &resource.UpdateResponse{State: emptyState(ctx, t, userSchema(t))}
+	(&UserResource{factory: fixedFactory(&mockConn{})}).Update(ctx, resource.UpdateRequest{Plan: planFromModel(ctx, t, newM), State: stateFromModel(ctx, t, oldM)}, resp)
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("want an error when the user is not visible from the new database")
 	}
 }

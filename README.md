@@ -101,7 +101,7 @@ provider "azsqlaccess" {
 
 ### `azsqlaccess_user`
 
-Creates a contained Entra identity inside a database. The `type` attribute determines how the principal is resolved on both engines.
+Creates an Entra identity as a database principal: a contained user in the database on Azure SQL, a server-wide role on PostgreSQL. The `type` attribute determines how the principal is resolved on both engines.
 
 #### Principal types and name format
 
@@ -118,7 +118,7 @@ The `object_id` is the **Object (principal) ID** shown in the Azure portal — t
 | Attribute | Type | Description |
 |---|---|---|
 | `server` | string, required | Fully-qualified hostname, e.g. `myserver.database.windows.net` |
-| `database` | string, required | Target database name |
+| `database` | string, required | Azure SQL: the database holding the user. PostgreSQL: the database the provider connects through |
 | `type` | string, required | `"user"`, `"group"`, or `"service_principal"` |
 | `name` | string, required | UPN (user) or display name (group, service_principal) |
 | `object_id` | string, required for group/sp | Entra Object (principal) ID UUID. Forbidden for type=user |

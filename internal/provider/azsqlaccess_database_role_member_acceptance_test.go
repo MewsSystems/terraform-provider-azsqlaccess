@@ -6,9 +6,11 @@ package provider
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 )
 
 // Happy-trail acceptance tests for azsqlaccess_database_role_member.
@@ -135,12 +137,15 @@ func TestAccRoleMember_user_postgres(t *testing.T) {
 }
 
 func TestAccRoleMember_group_postgres(t *testing.T) {
+	if os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE") == "postgres" {
+		t.Skip("the database-move step needs AZSQLACCESS_TEST_POSTGRES_DATABASE to differ from postgres")
+	}
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccRoleMemberConfig_group_postgres(),
+				Config: testAccRoleMemberConfig_group_postgres(os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE")),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("azsqlaccess_database_role_member.test", "role", "pg_read_all_data"),
 					resource.TestCheckResourceAttr("azsqlaccess_database_role_member.test", "member", os.Getenv("AZSQLACCESS_TEST_GROUP_NAME")),
@@ -155,6 +160,23 @@ func TestAccRoleMember_group_postgres(t *testing.T) {
 					os.Getenv("AZSQLACCESS_TEST_POSTGRES_SERVER"),
 					os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE"),
 					os.Getenv("AZSQLACCESS_TEST_GROUP_NAME"),
+				),
+			},
+			{
+				Config: testAccRoleMemberConfig_group_postgres("postgres"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("azsqlaccess_database_role_member.test", plancheck.ResourceActionUpdate),
+					},
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("azsqlaccess_database_role_member.test", "database", "postgres"),
+					resource.TestCheckResourceAttrWith("azsqlaccess_database_role_member.test", "id", func(v string) error {
+						if !strings.Contains(v, "/postgres/") {
+							return fmt.Errorf("id %q does not contain /postgres/", v)
+						}
+						return nil
+					}),
 				),
 			},
 		},
@@ -290,7 +312,7 @@ resource "azsqlaccess_database_role_member" "test" {
 	)
 }
 
-func testAccRoleMemberConfig_group_postgres() string {
+func testAccRoleMemberConfig_group_postgres(db string) string {
 	return postgresProviderConfig + fmt.Sprintf(`
 resource "azsqlaccess_user" "test" {
   server    = %q
@@ -308,11 +330,11 @@ resource "azsqlaccess_database_role_member" "test" {
 }
 `,
 		os.Getenv("AZSQLACCESS_TEST_POSTGRES_SERVER"),
-		os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE"),
+		db,
 		os.Getenv("AZSQLACCESS_TEST_GROUP_NAME"),
 		os.Getenv("AZSQLACCESS_TEST_GROUP_OBJECT_ID"),
 		os.Getenv("AZSQLACCESS_TEST_POSTGRES_SERVER"),
-		os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE"),
+		db,
 	)
 }
 
