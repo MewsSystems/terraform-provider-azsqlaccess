@@ -56,7 +56,8 @@ The contract is the `DatabaseConnector` interface in `internal/database/connecto
 - **`MarkdownDescription`** (not `Description`) on every schema field — these flow into the registry's rendered docs and the VS Code extension. Treat them as user-facing copy.
 - **Cross-attribute validation** lives in `ValidateConfig` (e.g. `type=user` forbids `object_id`). Per-attribute validators (`validators.StringOneOf`, `validators.StringUUID`) live in `internal/validators/`.
 - **Plan modifiers in use:**
-  - `RequiresReplace()` — for immutable attrs (`server`, `database`, `type`, `name`, `object_id`).
+  - `RequiresReplace()` — for immutable attrs (`server`, `type`, `name`, `object_id`; `role`, `member`).
+  - `database` is replaced only when `ConnectorFactory.ServerScopedPrincipals()` is false, decided in each resource's `ModifyPlan` via `internal/resources/dbscope`.
   - `UseStateForUnknown()` — for computed attrs (`id`, `principal_id`, `default_schema`) to avoid spurious plan churn.
 - **Import ID format** is documented in the import-handler comment block on each resource and must match `Create()`'s ID assembly.
   - `azsqlaccess_user`: `server/database/user/upn` or `server/database/{group|service_principal}/name/object_id`

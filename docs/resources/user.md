@@ -58,7 +58,7 @@ resource "azsqlaccess_user" "pg_group" {
 
 ### Required
 
-- `database` (String) Name of the database in which to create the user.
+- `database` (String) Database the provider connects through. On Azure SQL the contained user lives in this database, and changing it forces resource replacement. On PostgreSQL a role belongs to the server, so changing it only changes where the provider connects and is applied in place.
 - `name` (String) Principal name for the contained database user:
 
 - `type = "user"` → UPN, e.g. `"juan.perez@milanesa.com"`. Works on both engines.

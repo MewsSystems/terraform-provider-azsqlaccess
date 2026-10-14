@@ -74,14 +74,6 @@ func TestRoleMemberResource_Schema_HasRequiredAttributes(t *testing.T) {
 	}
 }
 
-// Update is intentionally a no-op (all attributes RequiresReplace). Verify it
-// runs without panic and produces no diagnostics. This covers the body for
-// the coverage reporter.
-func TestRoleMemberResource_Update_NoOp(t *testing.T) {
-	r := &RoleMemberResource{}
-	r.Update(context.Background(), resource.UpdateRequest{}, &resource.UpdateResponse{})
-}
-
 func TestRoleMemberResource_ImportState_Success(t *testing.T) {
 	ctx := context.Background()
 	r := &RoleMemberResource{}

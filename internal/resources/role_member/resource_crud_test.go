@@ -274,3 +274,77 @@ func TestRoleMemberResource_Delete_ConnectorError(t *testing.T) {
 		t.Fatalf("expected connector error")
 	}
 }
+
+// ---------- ModifyPlan / Update ---------------------------------------------
+
+func rmModifyPlan(t *testing.T, f database.ConnectorFactory, oldDB, newDB string) *resource.ModifyPlanResponse {
+	t.Helper()
+	ctx := context.Background()
+	base := roleMemberModel{
+		ID:       types.StringValue("myserver.postgres.database.azure.com/" + oldDB + "/pg_read_all_data/db.reader"),
+		Server:   types.StringValue("myserver.postgres.database.azure.com"),
+		Database: types.StringValue(oldDB),
+		Role:     types.StringValue("pg_read_all_data"),
+		Member:   types.StringValue("db.reader"),
+	}
+	next := base
+	next.Database = types.StringValue(newDB)
+	plan := planFromModel(ctx, t, next)
+	resp := &resource.ModifyPlanResponse{Plan: plan}
+	(&RoleMemberResource{factory: f}).ModifyPlan(ctx, resource.ModifyPlanRequest{State: stateFromModel(ctx, t, base), Plan: plan}, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("ModifyPlan: %v", resp.Diagnostics)
+	}
+	return resp
+}
+
+func TestRoleMemberResource_ModifyPlan_DatabaseChange_ServerScoped_InPlace(t *testing.T) {
+	if r := rmModifyPlan(t, &mockFactory{serverScoped: true}, "mydb", "postgres"); len(r.RequiresReplace) != 0 {
+		t.Fatalf("RequiresReplace = %v, want none", r.RequiresReplace)
+	}
+}
+
+func TestRoleMemberResource_ModifyPlan_DatabaseChange_SQLServer_RequiresReplace(t *testing.T) {
+	if r := rmModifyPlan(t, &mockFactory{serverScoped: false}, "mydb", "otherdb"); !r.RequiresReplace.Contains(path.Root("database")) {
+		t.Fatalf("RequiresReplace = %v, want database", r.RequiresReplace)
+	}
+}
+
+func TestRoleMemberResource_Update_VerifiesMembershipThroughNewDatabase(t *testing.T) {
+	ctx := context.Background()
+	var gotDB string
+	conn := &mockConn{}
+	f := &mockFactory{get: func(_, d string) (database.DatabaseConnector, error) { gotDB = d; return conn, nil }}
+	plan := roleMemberModel{
+		ID: types.StringUnknown(), Server: types.StringValue("myserver.postgres.database.azure.com"),
+		Database: types.StringValue("postgres"), Role: types.StringValue("pg_read_all_data"), Member: types.StringValue("db.reader"),
+	}
+	resp := &resource.UpdateResponse{State: emptyState(ctx, t, roleMemberSchema(t))}
+	(&RoleMemberResource{factory: f}).Update(ctx, resource.UpdateRequest{Plan: planFromModel(ctx, t, plan)}, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update: %v", resp.Diagnostics)
+	}
+	if gotDB != "postgres" {
+		t.Fatalf("connected to %q, want postgres", gotDB)
+	}
+	var got roleMemberModel
+	resp.State.Get(ctx, &got)
+	if want := "myserver.postgres.database.azure.com/postgres/pg_read_all_data/db.reader"; got.ID.ValueString() != want {
+		t.Fatalf("id = %q, want %q", got.ID.ValueString(), want)
+	}
+}
+
+func TestRoleMemberResource_Update_MissingMembership_Errors(t *testing.T) {
+	ctx := context.Background()
+	conn := &mockConn{getFn: func(context.Context, string, string) (*database.RoleMember, error) { return nil, nil }}
+	f := fixedFactory(conn)
+	plan := roleMemberModel{
+		ID: types.StringUnknown(), Server: types.StringValue("myserver.postgres.database.azure.com"),
+		Database: types.StringValue("postgres"), Role: types.StringValue("pg_read_all_data"), Member: types.StringValue("db.reader"),
+	}
+	resp := &resource.UpdateResponse{State: emptyState(ctx, t, roleMemberSchema(t))}
+	(&RoleMemberResource{factory: f}).Update(ctx, resource.UpdateRequest{Plan: planFromModel(ctx, t, plan)}, resp)
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("want an error when the membership is not visible from the new database")
+	}
+}

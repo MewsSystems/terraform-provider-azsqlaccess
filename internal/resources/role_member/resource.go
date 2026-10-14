@@ -14,16 +14,17 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/mews/terraform-provider-azsqlaccess/internal/database"
+	"github.com/mews/terraform-provider-azsqlaccess/internal/resources/dbscope"
 )
 
 var (
 	_ resource.Resource                = &RoleMemberResource{}
 	_ resource.ResourceWithConfigure   = &RoleMemberResource{}
 	_ resource.ResourceWithImportState = &RoleMemberResource{}
+	_ resource.ResourceWithModifyPlan  = &RoleMemberResource{}
 )
 
 // RoleMemberResource manages an azsqlaccess_database_role_member resource.
-// There is no Update — role memberships are either present or absent.
 type RoleMemberResource struct {
 	factory database.ConnectorFactory
 }
@@ -39,7 +40,7 @@ func (r *RoleMemberResource) Metadata(_ context.Context, req resource.MetadataRe
 func (r *RoleMemberResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Grants a database role to a member (user, group, or managed identity). " +
-			"There is no update operation — changing `role` or `member` destroys and recreates the resource.",
+			"Changing `role` or `member` destroys and recreates the resource.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed: true,
@@ -56,10 +57,7 @@ func (r *RoleMemberResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			},
 			"database": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Name of the database.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
+				MarkdownDescription: "Database the provider connects through. On Azure SQL the membership lives in this database, and changing it forces resource replacement. On PostgreSQL role membership belongs to the server, so changing it only changes where the provider connects and is applied in place.",
 			},
 			"role": schema.StringAttribute{
 				Required: true,
@@ -133,12 +131,7 @@ func (r *RoleMemberResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
-	plan.ID = types.StringValue(strings.Join([]string{
-		plan.Server.ValueString(),
-		plan.Database.ValueString(),
-		plan.Role.ValueString(),
-		plan.Member.ValueString(),
-	}, "/"))
+	plan.ID = types.StringValue(roleMemberID(plan))
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -179,8 +172,55 @@ func (r *RoleMemberResource) Read(ctx context.Context, req resource.ReadRequest,
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-// Update is not implemented — all attributes have RequiresReplace.
-func (r *RoleMemberResource) Update(_ context.Context, _ resource.UpdateRequest, _ *resource.UpdateResponse) {
+// Update runs only for a database change on a server-scoped engine: the membership is
+// unchanged, so it is confirmed through the new database and the id recomputed.
+func (r *RoleMemberResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan roleMemberModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	conn, err := r.factory.GetConnector(plan.Server.ValueString(), plan.Database.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to get connector",
+			fmt.Sprintf("server %q database %q: %s", plan.Server.ValueString(), plan.Database.ValueString(), err))
+		return
+	}
+	defer conn.Close()
+	rm, err := conn.GetRoleMember(ctx, plan.Role.ValueString(), plan.Member.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to read role membership",
+			fmt.Sprintf("role %q member %q in database %q on %q: %s", plan.Role.ValueString(),
+				plan.Member.ValueString(), plan.Database.ValueString(), plan.Server.ValueString(), err))
+		return
+	}
+	if rm == nil {
+		resp.Diagnostics.AddError("Role membership not found",
+			fmt.Sprintf("role %q member %q is not visible from database %q on %q", plan.Role.ValueString(),
+				plan.Member.ValueString(), plan.Database.ValueString(), plan.Server.ValueString()))
+		return
+	}
+	plan.ID = types.StringValue(roleMemberID(plan))
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+}
+
+// ModifyPlan plans a database change in place or as a replacement, per engine.
+func (r *RoleMemberResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+	var state, plan roleMemberModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() || plan.Database.Equal(state.Database) {
+		return
+	}
+	dbscope.PlanDatabaseChange(ctx, r.factory, resp)
+}
+
+// roleMemberID mirrors the import ID: server/database/role/member.
+func roleMemberID(m roleMemberModel) string {
+	return strings.Join([]string{m.Server.ValueString(), m.Database.ValueString(), m.Role.ValueString(), m.Member.ValueString()}, "/")
 }
 
 func (r *RoleMemberResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

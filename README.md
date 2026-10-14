@@ -146,12 +146,12 @@ terraform import azsqlaccess_user.example \
 
 ### `azsqlaccess_database_role_member`
 
-Grants one database role to one member. No Update — all attributes force replacement.
+Grants one database role to one member. Changing `role`, `member` or `server` replaces the resource. Changing `database` replaces it on Azure SQL and is applied in place on PostgreSQL.
 
 | Attribute | Type | Description |
 |---|---|---|
 | `server` | string, required | Fully-qualified hostname |
-| `database` | string, required | Target database name |
+| `database` | string, required | Database the provider connects through. Membership lives in it on Azure SQL; on PostgreSQL it is server-wide |
 | `role` | string, required | Database role name, e.g. `db_datareader` or `pg_read_all_data` |
 | `member` | string, required | Principal name — use `azsqlaccess_user.<name>.name` to declare the dependency |
 | `id` | string, computed | `server/database/role/member` |

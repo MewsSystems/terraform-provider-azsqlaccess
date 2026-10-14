@@ -3,12 +3,12 @@
 page_title: "azsqlaccess_database_role_member Resource - azsqlaccess"
 subcategory: ""
 description: |-
-  Grants a database role to a member (user, group, or managed identity). There is no update operation — changing role or member destroys and recreates the resource.
+  Grants a database role to a member (user, group, or managed identity). Changing role or member destroys and recreates the resource.
 ---
 
 # azsqlaccess_database_role_member (Resource)
 
-Grants a database role to a member (user, group, or managed identity). There is no update operation — changing `role` or `member` destroys and recreates the resource.
+Grants a database role to a member (user, group, or managed identity). Changing `role` or `member` destroys and recreates the resource.
 
 ## Example Usage
 
@@ -38,7 +38,7 @@ resource "azsqlaccess_database_role_member" "reader" {
 
 ### Required
 
-- `database` (String) Name of the database.
+- `database` (String) Database the provider connects through. On Azure SQL the membership lives in this database, and changing it forces resource replacement. On PostgreSQL role membership belongs to the server, so changing it only changes where the provider connects and is applied in place.
 - `member` (String) Principal name of the member to add to the role — must match the `name` of an `azsqlaccess_user` resource.
 - `role` (String) Name of the database role to grant. Role names are engine-specific:
 

@@ -29,7 +29,10 @@ func response(t *testing.T) *resource.ModifyPlanResponse {
 		"id":       schema.StringAttribute{Computed: true},
 		"database": schema.StringAttribute{Required: true},
 	}}
-	objType := s.Type().TerraformType(context.Background()).(tftypes.Object)
+	objType, ok := s.Type().TerraformType(context.Background()).(tftypes.Object)
+	if !ok {
+		t.Fatal("schema type is not an object")
+	}
 	raw := tftypes.NewValue(objType, map[string]tftypes.Value{
 		"id":       tftypes.NewValue(tftypes.String, "myserver.postgres.database.azure.com/mydb/x"),
 		"database": tftypes.NewValue(tftypes.String, "postgres"),
