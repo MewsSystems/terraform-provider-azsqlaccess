@@ -63,6 +63,9 @@ func NewFactory(cred azcore.TokenCredential) *Factory {
 // underlying connection invokes tokenProvider, which calls our shared
 // azcore.TokenCredential. This keeps the same credential surface across MSSQL
 // and Postgres and lets ARM_USE_OIDC / OIDC token-file flows work uniformly.
+// ServerScopedPrincipals is false: a contained user exists in one database.
+func (f *Factory) ServerScopedPrincipals() bool { return false }
+
 func (f *Factory) GetConnector(server, database string) (database_pkg.DatabaseConnector, error) {
 	key := server + "\x00" + database
 

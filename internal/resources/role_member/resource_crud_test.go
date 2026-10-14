@@ -18,8 +18,11 @@ import (
 // ---------- mocks -----------------------------------------------------------
 
 type mockFactory struct {
-	get func(server, db string) (database.DatabaseConnector, error)
+	get          func(server, db string) (database.DatabaseConnector, error)
+	serverScoped bool
 }
+
+func (m *mockFactory) ServerScopedPrincipals() bool { return m.serverScoped }
 
 func (m *mockFactory) GetConnector(s, d string) (database.DatabaseConnector, error) {
 	return m.get(s, d)

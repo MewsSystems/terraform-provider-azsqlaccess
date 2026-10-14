@@ -179,3 +179,9 @@ func TestFactory_NewPool_AppliesConnectionBounds(t *testing.T) {
 		t.Errorf("MaxConnIdleTime = %v, want %v", cfg.MaxConnIdleTime, maxConnIdleTime)
 	}
 }
+
+func TestFactory_ServerScopedPrincipals(t *testing.T) {
+	if !NewFactory(nil, "").ServerScopedPrincipals() {
+		t.Fatal("postgres roles are server-wide; ServerScopedPrincipals() = false")
+	}
+}

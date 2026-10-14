@@ -86,6 +86,9 @@ func NewFactory(cred azcore.TokenCredential, loginUsername string) *Factory {
 	}
 }
 
+// ServerScopedPrincipals is true: a PostgreSQL role and its grants are cluster-wide.
+func (f *Factory) ServerScopedPrincipals() bool { return true }
+
 // GetConnector returns a Connector backed by a cached pgxpool for the given
 // (server, database) pair, creating the pool on first call.
 // Before each new connection the pool acquires a fresh Entra token and:

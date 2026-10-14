@@ -128,3 +128,9 @@ func TestConnector_Close_IsNoOp(t *testing.T) {
 		t.Fatalf("Close should return nil; got %v", err)
 	}
 }
+
+func TestFactory_ServerScopedPrincipals(t *testing.T) {
+	if NewFactory(nil).ServerScopedPrincipals() {
+		t.Fatal("contained users belong to one database; ServerScopedPrincipals() = true")
+	}
+}

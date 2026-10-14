@@ -49,4 +49,7 @@ type DatabaseConnector interface {
 // this avoids requiring access to `master`, which regular Entra users cannot connect to.
 type ConnectorFactory interface {
 	GetConnector(server, database string) (DatabaseConnector, error)
+
+	// ServerScopedPrincipals reports whether principals and role memberships belong to the server, not one database.
+	ServerScopedPrincipals() bool
 }

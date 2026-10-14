@@ -19,9 +19,12 @@ import (
 // ---------- mock factory + connector ---------------------------------------
 
 type mockFactory struct {
-	get    func(server, db string) (database.DatabaseConnector, error)
-	called int
+	get          func(server, db string) (database.DatabaseConnector, error)
+	called       int
+	serverScoped bool
 }
+
+func (m *mockFactory) ServerScopedPrincipals() bool { return m.serverScoped }
 
 func (m *mockFactory) GetConnector(s, d string) (database.DatabaseConnector, error) {
 	m.called++
