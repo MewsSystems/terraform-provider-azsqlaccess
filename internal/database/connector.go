@@ -50,6 +50,8 @@ type DatabaseConnector interface {
 type ConnectorFactory interface {
 	GetConnector(server, database string) (DatabaseConnector, error)
 
-	// ServerScopedPrincipals reports whether principals and role memberships belong to the server, not one database.
+	// ServerScopedPrincipals reports whether a principal and its role memberships
+	// belong to the server rather than to one database. When true, the database a
+	// resource names only selects where the provider connects.
 	ServerScopedPrincipals() bool
 }
