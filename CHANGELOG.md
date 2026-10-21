@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.3...v0.2.4) (2026-10-21)
+
+
+### Bug Fixes
+
+* **ci:** grant lock-threads write access and drop the comment triage workflow ([#35](https://github.com/MewsSystems/terraform-provider-azsqlaccess/issues/35)) ([e3289b7](https://github.com/MewsSystems/terraform-provider-azsqlaccess/commit/e3289b74c6ad952bff3f4d92b343df89557c2054))
+
 ## [0.2.3](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.2...v0.2.3) (2026-08-31)
 
 
