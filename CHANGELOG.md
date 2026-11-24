@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.6](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.5...v0.2.6) (2026-11-24)
+
+
+### Bug Fixes
+
+* **postgres:** read default_schema back from the role's search_path ([#43](https://github.com/MewsSystems/terraform-provider-azsqlaccess/issues/43)) ([d072a60](https://github.com/MewsSystems/terraform-provider-azsqlaccess/commit/d072a60c89f2cdc657e6d1f21220e2d46ecb03e1))
+
 ## [0.2.5](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.4...v0.2.5) (2026-11-24)
 
 
