@@ -221,21 +221,65 @@ func readUserInto(ctx context.Context, pool pgxConn, user *database.User) error 
 	).Scan(&user.PrincipalID, &searchPath); err != nil {
 		return err
 	}
-	user.DefaultSchema = unquoteIdentifier(searchPath)
+	// A path that isn't exactly one schema (set outside Terraform) is kept as
+	// stored, so it shows as drift.
+	user.DefaultSchema = searchPath
+	if schemas, ok := splitSearchPath(searchPath); ok && len(schemas) == 1 {
+		user.DefaultSchema = schemas[0]
+	}
 	return nil
 }
 
-// unquoteIdentifier reverses quoteIdentifier; PostgreSQL stores search_path
-// elements quoted only when they need it. Anything else (e.g. a multi-schema
-// path set outside Terraform) is returned as stored, so it shows as drift.
-func unquoteIdentifier(s string) string {
-	if len(s) < 2 || s[0] != '"' || s[len(s)-1] != '"' {
-		return s
+// splitSearchPath parses a stored search_path value into schema names, the
+// way PostgreSQL's SplitIdentifierString does: comma-separated, optionally
+// whitespace-padded, with "..." quoting and "" as an escaped quote. It reports
+// false for anything PostgreSQL would reject. Unquoted names are not
+// downcased: PostgreSQL stores them already normalised.
+func splitSearchPath(s string) ([]string, bool) {
+	var schemas []string
+	i := 0
+	skipSpace := func() {
+		for i < len(s) && strings.IndexByte(" \t\n\r\f", s[i]) >= 0 {
+			i++
+		}
 	}
-	inner := s[1 : len(s)-1]
-	// A lone quote inside means several quoted identifiers, not one.
-	if strings.Contains(strings.ReplaceAll(inner, `""`, ""), `"`) {
-		return s
+	for {
+		skipSpace()
+		var name string
+		if i < len(s) && s[i] == '"' {
+			var b strings.Builder
+			for {
+				end := strings.IndexByte(s[i+1:], '"')
+				if end < 0 {
+					return nil, false // unterminated quote
+				}
+				b.WriteString(s[i+1 : i+1+end])
+				i += end + 2
+				if i < len(s) && s[i] == '"' { // "" is an escaped quote
+					b.WriteByte('"')
+					continue
+				}
+				break
+			}
+			name = b.String()
+		} else {
+			start := i
+			for i < len(s) && s[i] != ',' && strings.IndexByte(" \t\n\r\f", s[i]) < 0 {
+				i++
+			}
+			name = s[start:i]
+		}
+		if name == "" {
+			return nil, false
+		}
+		schemas = append(schemas, name)
+		skipSpace()
+		if i == len(s) {
+			return schemas, true
+		}
+		if s[i] != ',' {
+			return nil, false
+		}
+		i++
 	}
-	return strings.ReplaceAll(inner, `""`, `"`)
 }

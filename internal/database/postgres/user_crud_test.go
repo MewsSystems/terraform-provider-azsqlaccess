@@ -487,6 +487,7 @@ func TestGetUser_ReadsSearchPath(t *testing.T) {
 		"quoted":              {`"My Schema"`, "My Schema"},
 		"embedded quote":      {`"a""b"`, `a"b`},
 		"quoted multi-schema": {`"My Schema", "Other Schema"`, `"My Schema", "Other Schema"`},
+		"malformed":           {`"unterminated`, `"unterminated`},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
