@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.3...v0.2.4) (2026-11-24)
+
+
+### Bug Fixes
+
+* retry user creation while Entra replicates the principal ([#37](https://github.com/MewsSystems/terraform-provider-azsqlaccess/issues/37)) ([bb5efe0](https://github.com/MewsSystems/terraform-provider-azsqlaccess/commit/bb5efe091d19ba746f096d59d3cea2ce68340cdb))
+
 ## [0.2.3](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.2...v0.2.3) (2026-08-31)
 
 
