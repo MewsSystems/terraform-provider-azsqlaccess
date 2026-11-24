@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.5](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.4...v0.2.5) (2026-11-24)
+
+
+### Bug Fixes
+
+* **deps:** bump golang.org/x/net, x/crypto and grpc for govulncheck ([#40](https://github.com/MewsSystems/terraform-provider-azsqlaccess/issues/40)) ([77903a1](https://github.com/MewsSystems/terraform-provider-azsqlaccess/commit/77903a1a1b7f418aa779e4e6fbec96a46d2bf2c0))
+
 ## [0.2.4](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.3...v0.2.4) (2026-11-24)
 
 
