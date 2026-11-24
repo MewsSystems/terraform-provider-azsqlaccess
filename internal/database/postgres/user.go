@@ -57,30 +57,38 @@ func (c *Connector) CreateUser(ctx context.Context, user *database.User) error {
 	//       service_principal  → 'service'
 	//
 	// Parameters: isAdmin=false (no superuser), isMfa=false (no MFA enforcement).
-	switch user.Type {
-	case "user":
-		if _, err := sysPool.Exec(ctx,
-			"SELECT pgaadauth_create_principal($1, false, false)",
-			user.Name,
-		); err != nil {
-			return fmt.Errorf("pgaadauth_create_principal: %w", err)
+	//
+	// A principal created moments ago may not have replicated in Entra yet, so
+	// the call is retried while the server reports its OID as not found.
+	if err := withPrincipalPropagationRetry(ctx, func() error {
+		switch user.Type {
+		case "user":
+			if _, err := sysPool.Exec(ctx,
+				"SELECT pgaadauth_create_principal($1, false, false)",
+				user.Name,
+			); err != nil {
+				return fmt.Errorf("pgaadauth_create_principal: %w", err)
+			}
+		case "group":
+			if _, err := sysPool.Exec(ctx,
+				"SELECT pgaadauth_create_principal_with_oid($1, $2, 'group', false, false)",
+				user.Name, user.ObjectID,
+			); err != nil {
+				return fmt.Errorf("pgaadauth_create_principal_with_oid: %w", err)
+			}
+		case "service_principal":
+			if _, err := sysPool.Exec(ctx,
+				"SELECT pgaadauth_create_principal_with_oid($1, $2, 'service', false, false)",
+				user.Name, user.ObjectID,
+			); err != nil {
+				return fmt.Errorf("pgaadauth_create_principal_with_oid: %w", err)
+			}
+		default:
+			return fmt.Errorf("unknown principal type %q: must be user, group, or service_principal", user.Type)
 		}
-	case "group":
-		if _, err := sysPool.Exec(ctx,
-			"SELECT pgaadauth_create_principal_with_oid($1, $2, 'group', false, false)",
-			user.Name, user.ObjectID,
-		); err != nil {
-			return fmt.Errorf("pgaadauth_create_principal_with_oid: %w", err)
-		}
-	case "service_principal":
-		if _, err := sysPool.Exec(ctx,
-			"SELECT pgaadauth_create_principal_with_oid($1, $2, 'service', false, false)",
-			user.Name, user.ObjectID,
-		); err != nil {
-			return fmt.Errorf("pgaadauth_create_principal_with_oid: %w", err)
-		}
-	default:
-		return fmt.Errorf("unknown principal type %q: must be user, group, or service_principal", user.Type)
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// search_path is the PostgreSQL equivalent of MSSQL's DEFAULT_SCHEMA.
