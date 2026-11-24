@@ -1,9 +1,15 @@
-# Manual publish: build + GPG-sign artifacts with goreleaser and attach them to
-# the GitHub Release. Dispatch this against the tag you want to publish (pick the
-# vX.Y.Z tag as the ref) once release-please has cut it.
+# Publish: build + GPG-sign artifacts with goreleaser and attach them to the
+# GitHub Release. release-please.yml calls this with the tag it has just cut. To
+# republish by hand, dispatch it against the vX.Y.Z tag as the ref.
 name: Release
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: The vX.Y.Z tag to publish
+        type: string
+        required: true
   workflow_dispatch:
 
 permissions:
@@ -15,6 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

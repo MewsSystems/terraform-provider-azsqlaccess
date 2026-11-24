@@ -110,8 +110,8 @@ examples/resources/<r>/import.sh       → docs/resources/<r>.md "Import"
 docs/                                  GENERATED — never hand-edit
 tools/tools.go                         tfplugindocs entry
 .goreleaser.yml                        Cross-compile, ZIP, SHA256SUMS, GPG checksum sign
-.github/workflows/release-please.yml   On main: release-please opens/merges the release PR → tags v* + creates the Release (no publish)
-.github/workflows/release.yml          workflow_dispatch: goreleaser publish (GPG sign + upload) against a chosen v* tag
+.github/workflows/release-please.yml   On main: release-please opens/merges the release PR → tags v* + creates the Release, then calls release.yml
+.github/workflows/release.yml          workflow_call (or workflow_dispatch to republish): goreleaser publish (GPG sign + upload) for a v* tag
 .github/workflows/test.yml             Build, lint, generate-diff check, unit tests on every PR
 .github/workflows/acceptance.yml       workflow_dispatch-only acceptance tests against real Azure
 ```
@@ -191,7 +191,7 @@ When a HashiCorp/Plugin-Framework convention conflicts with a third-party sugges
 
 ### Releasing
 
-- Versioning and publishing are split. **release-please** (off Conventional Commits — never tag by hand) opens/merges the release PR, which tags `v*` and creates the GitHub Release. Publishing is **manual for now**: dispatch `release.yml` against the `v*` tag to import GPG + run goreleaser and upload signed artifacts. The Terraform Registry then polls and indexes within minutes. See [CONTRIBUTING.md](CONTRIBUTING.md).
+- Versioning and publishing are split. **release-please** (off Conventional Commits — never tag by hand) opens/merges the release PR, which tags `v*` and creates the GitHub Release. The same run then calls `release.yml` for that tag to import GPG + run goreleaser and upload signed artifacts; dispatch `release.yml` against a tag to republish it. The Terraform Registry then polls and indexes within minutes. See [CONTRIBUTING.md](CONTRIBUTING.md).
 - The Registry **rejects unsigned releases**. GPG signing is mandatory.
 - Required GitHub secrets: `GPG_PRIVATE_KEY`, `PASSPHRASE`. Public key registered at `registry.terraform.io`. Terraform Registry GitHub App must be installed on the org.
 - **Never** force-push tags or amend a published commit on this repo — registry indexers cache by commit SHA.
