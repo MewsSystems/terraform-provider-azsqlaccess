@@ -374,7 +374,7 @@ Write permissions are deliberately not checked. They already fail loudly with a 
 
 ## Requirements
 
-- Go >= 1.25.11
+- Go >= 1.27.4
 - Terraform >= 1.5
 
 ---
@@ -434,7 +434,7 @@ CI runs `golangci-lint` against the v2 config in [`.golangci.yml`](.golangci.yml
 
 ```bash
 # Option 1 — Makefile (requires golangci-lint already installed and built
-# against Go ≥ 1.25; install via `brew install golangci-lint` or
+# against Go ≥ 1.27; install via `brew install golangci-lint` or
 # https://golangci-lint.run/welcome/install/).
 make lint
 
