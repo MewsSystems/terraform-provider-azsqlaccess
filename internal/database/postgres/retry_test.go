@@ -35,3 +35,34 @@ func TestIsDeadlock(t *testing.T) {
 		})
 	}
 }
+
+// Message as Azure Database for PostgreSQL returns it for a principal Entra has
+// not replicated yet, with this repo's placeholders substituted.
+const principalNotFoundMsg = `Cannot validate Microsoft Entra ID user "myapp-identity" with OID ` +
+	`"00000000-0000-0000-0000-000000000000" because the OID isn't found in the tenant. ` +
+	`Make sure it's correct and retry.`
+
+func TestIsPrincipalNotFound(t *testing.T) {
+	notFound := &pgconn.PgError{Code: "0LP01", Message: principalNotFoundMsg}
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"non-pg error with the same text", errors.New(principalNotFoundMsg), false},
+		{"0LP01 OID not found", notFound, true},
+		{"wrapped 0LP01 OID not found", fmt.Errorf("pgaadauth_create_principal_with_oid: %w", notFound), true},
+		{"0LP01 other message", &pgconn.PgError{Code: "0LP01", Message: "role name does not match"}, false},
+		{"other code same message", &pgconn.PgError{Code: "42704", Message: principalNotFoundMsg}, false},
+		{"deadlock", &pgconn.PgError{Code: "40P01"}, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isPrincipalNotFound(tc.err); got != tc.want {
+				t.Fatalf("isPrincipalNotFound(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}

@@ -174,10 +174,11 @@ When a HashiCorp/Plugin-Framework convention conflicts with a third-party sugges
 
 ### Retry
 
-- **Only retry on transient errors.** This codebase retries deadlocks only:
+- **Only retry on transient errors.** This codebase retries deadlocks, and on PostgreSQL the wait for a new Entra principal to replicate:
   - MSSQL: error number `1205`.
   - PostgreSQL: SQLSTATE `40P01`.
-- Auth, syntax, and missing-object errors are permanent — surface them immediately. `cenkalti/backoff/v4` with bounded attempts (currently 4).
+  - PostgreSQL `CreateUser`: SQLSTATE `0LP01` with "the OID isn't found in the tenant", for up to three minutes.
+- Auth, syntax, and missing-object errors are permanent — surface them immediately. `cenkalti/backoff/v4` with bounded attempts (currently 4 for deadlocks).
 
 ### Examples and docs
 

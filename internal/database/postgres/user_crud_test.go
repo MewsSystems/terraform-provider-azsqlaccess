@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/mews/terraform-provider-azsqlaccess/internal/database"
@@ -228,6 +229,62 @@ func TestCreateUser_ServicePrincipalOidError(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "pgaadauth_create_principal_with_oid") {
+		t.Errorf("error should be wrapped; got %v", err)
+	}
+}
+
+// noWaitPrincipalRetry swaps the propagation backoff for one that allows
+// maxRetries retries without sleeping.
+func noWaitPrincipalRetry(t *testing.T, maxRetries uint64) {
+	t.Helper()
+	orig := newPrincipalPropagationBackOff
+	newPrincipalPropagationBackOff = func() backoff.BackOff {
+		return backoff.WithMaxRetries(&backoff.ZeroBackOff{}, maxRetries)
+	}
+	t.Cleanup(func() { newPrincipalPropagationBackOff = orig })
+}
+
+func TestCreateUser_RetriesUntilPrincipalIsInEntra(t *testing.T) {
+	noWaitPrincipalRetry(t, 2)
+	const createSQL = "SELECT pgaadauth_create_principal_with_oid($1, $2, 'service', false, false)"
+	c, pool, sys := newMockedConnector(t)
+	expectPgaadAvailable(sys)
+	sys.ExpectExec(createSQL).
+		WithArgs("myapp-identity", "00000000-0000-0000-0000-000000000000").
+		WillReturnError(&pgconn.PgError{Code: "0LP01", Message: principalNotFoundMsg})
+	sys.ExpectExec(createSQL).
+		WithArgs("myapp-identity", "00000000-0000-0000-0000-000000000000").
+		WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	pool.ExpectQuery(readUserSQL).
+		WithArgs("myapp-identity").
+		WillReturnRows(pgxmock.NewRows([]string{"oid"}).AddRow(int64(20001)))
+
+	u := &database.User{
+		Type: "service_principal", Name: "myapp-identity", ObjectID: "00000000-0000-0000-0000-000000000000",
+	}
+	if err := c.CreateUser(context.Background(), u); err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+}
+
+func TestCreateUser_PrincipalNeverInEntraGivesUp(t *testing.T) {
+	noWaitPrincipalRetry(t, 2)
+	const createSQL = "SELECT pgaadauth_create_principal_with_oid($1, $2, 'service', false, false)"
+	c, _, sys := newMockedConnector(t)
+	expectPgaadAvailable(sys)
+	for range 3 {
+		sys.ExpectExec(createSQL).
+			WithArgs("myapp-identity", "00000000-0000-0000-0000-000000000000").
+			WillReturnError(&pgconn.PgError{Code: "0LP01", Message: principalNotFoundMsg})
+	}
+
+	err := c.CreateUser(context.Background(), &database.User{
+		Type: "service_principal", Name: "myapp-identity", ObjectID: "00000000-0000-0000-0000-000000000000",
+	})
+	if !isPrincipalNotFound(err) {
+		t.Fatalf("expected the server's not-found error once retries run out; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "pgaadauth_create_principal_with_oid") {
 		t.Errorf("error should be wrapped; got %v", err)
