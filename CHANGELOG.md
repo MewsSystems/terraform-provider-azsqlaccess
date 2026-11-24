@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.7](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.6...v0.2.7) (2026-11-24)
+
+
+### Documentation
+
+* acceptance tests run on same-repository pull requests ([#45](https://github.com/MewsSystems/terraform-provider-azsqlaccess/issues/45)) ([2cca717](https://github.com/MewsSystems/terraform-provider-azsqlaccess/commit/2cca71721ab08977481a5b8ef14c414f96d65f22))
+
 ## [0.2.6](https://github.com/MewsSystems/terraform-provider-azsqlaccess/compare/v0.2.5...v0.2.6) (2026-11-24)
 
 
