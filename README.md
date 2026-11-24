@@ -44,7 +44,7 @@ The engine is selected **once** in `provider.Configure()` and injected into all 
 | `CreateUser` (type=user) | `CREATE USER [upn] FROM EXTERNAL PROVIDER` | `pgaadauth_create_principal(name, false, false)` |
 | `CreateUser` (type=group) | `CREATE USER [name] FROM EXTERNAL PROVIDER WITH OBJECT_ID = 'oid'` | `pgaadauth_create_principal_with_oid(name, oid, 'group', false, false)` |
 | `CreateUser` (type=service_principal) | `CREATE USER [name] FROM EXTERNAL PROVIDER WITH OBJECT_ID = 'oid'` | `pgaadauth_create_principal_with_oid(name, oid, 'service', false, false)` |
-| `GetUser` | `SELECT ... FROM sys.database_principals WHERE name = @name` | `SELECT oid::bigint FROM pg_roles WHERE rolname = $1` |
+| `GetUser` | `SELECT ... FROM sys.database_principals WHERE name = @name` | `SELECT oid, search_path FROM pg_roles WHERE rolname = $1` |
 | `UpdateUser` | `ALTER USER [name] WITH DEFAULT_SCHEMA = [schema]` | `ALTER ROLE "name" SET search_path TO "schema"` |
 | `DeleteUser` | `DROP USER IF EXISTS [name]` | `DROP ROLE IF EXISTS "name"` |
 | `CreateRoleMember` | `ALTER ROLE [role] ADD MEMBER [member]` | `GRANT "role" TO "member"` |
