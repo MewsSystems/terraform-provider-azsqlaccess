@@ -194,19 +194,18 @@ directive-coupling traps.
 ## Releasing (maintainers)
 
 Releases are automated with
-[release-please](https://github.com/googleapis/release-please); publishing the
-signed artifacts is a separate, deliberate step. **You never tag by hand.**
+[release-please](https://github.com/googleapis/release-please). **You never tag by
+hand.** The release PR is the gate: merging it publishes.
 
 1. Merged Conventional-Commit PRs accumulate on `main`.
 2. **release-please** (`.github/workflows/release-please.yml`) maintains an open
    **release PR** with the next computed version + generated `CHANGELOG.md`.
-3. **Merging the release PR** tags `vX.Y.Z` and creates the GitHub Release — but
-   does **not** publish artifacts.
-4. **Publish:** dispatch the **Release** workflow
-   (`.github/workflows/release.yml`, `workflow_dispatch`) against the `vX.Y.Z`
-   tag. goreleaser cross-compiles, checksums, and **GPG-signs** the artifacts and
-   attaches them to the Release. (Requires the `GPG_PRIVATE_KEY` / `PASSPHRASE`
-   secrets.)
+3. **Merging the release PR** tags `vX.Y.Z` and creates the GitHub Release.
+4. The same run then calls the **Release** workflow
+   (`.github/workflows/release.yml`) for that tag. goreleaser cross-compiles,
+   checksums, and **GPG-signs** the artifacts and attaches them to the Release.
+   (Requires the `GPG_PRIVATE_KEY` / `PASSPHRASE` secrets.) To republish a tag,
+   dispatch the Release workflow against it.
 5. The **Terraform Registry** polls the Release and indexes the new version
    within minutes.
 
