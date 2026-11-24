@@ -482,10 +482,11 @@ func userRow(oid int64, searchPath string) *pgxmock.Rows {
 
 func TestGetUser_ReadsSearchPath(t *testing.T) {
 	cases := map[string]struct{ stored, want string }{
-		"unset":          {"", "public"},
-		"plain":          {"reporting", "reporting"},
-		"quoted":         {`"My Schema"`, "My Schema"},
-		"embedded quote": {`"a""b"`, `a"b`},
+		"unset":               {"", "public"},
+		"plain":               {"reporting", "reporting"},
+		"quoted":              {`"My Schema"`, "My Schema"},
+		"embedded quote":      {`"a""b"`, `a"b`},
+		"quoted multi-schema": {`"My Schema", "Other Schema"`, `"My Schema", "Other Schema"`},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

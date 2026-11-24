@@ -229,8 +229,13 @@ func readUserInto(ctx context.Context, pool pgxConn, user *database.User) error 
 // elements quoted only when they need it. Anything else (e.g. a multi-schema
 // path set outside Terraform) is returned as stored, so it shows as drift.
 func unquoteIdentifier(s string) string {
-	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-		return strings.ReplaceAll(s[1:len(s)-1], `""`, `"`)
+	if len(s) < 2 || s[0] != '"' || s[len(s)-1] != '"' {
+		return s
 	}
-	return s
+	inner := s[1 : len(s)-1]
+	// A lone quote inside means several quoted identifiers, not one.
+	if strings.Contains(strings.ReplaceAll(inner, `""`, ""), `"`) {
+		return s
+	}
+	return strings.ReplaceAll(inner, `""`, `"`)
 }
