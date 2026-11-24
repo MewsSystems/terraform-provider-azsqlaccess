@@ -52,7 +52,7 @@ Items 9 and 10 can be provisioned with [`fixtures/`](./fixtures/README.md) — t
 
 ## Running in CI
 
-Actions tab → **Acceptance Tests → Run workflow**. Wall time ~3–5 min.
+Runs on every pull request from a branch of this repository, including the release PR; fork PRs skip it, so the release PR covers what they merged. To run it by hand: Actions tab → **Acceptance Tests → Run workflow**. Wall time ~3–5 min.
 
 Auth auto-selects: when `AZURE_CLIENT_SECRET` is unset (the default), the workflow exports `ARM_USE_OIDC=true` and the provider does the GitHub Actions OIDC federation exchange against the runner-injected `ACTIONS_ID_TOKEN_REQUEST_URL` / `_TOKEN` — no extra workflow step required. Set `AZURE_CLIENT_SECRET` and it falls back to client-secret auth.
 

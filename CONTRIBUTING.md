@@ -78,9 +78,10 @@ make test            # or: GOTOOLCHAIN=local go test ./...
 > PostgreSQL Flexible Server, plus Entra principals) and run real DDL against
 > them. **They cost money** and require an Azure subscription you control.
 
-Acceptance tests are **not** run by PR CI — they execute against long-lived
-Azure servers and are gated behind `TF_ACC=1`. Run them against **your own**
-Azure environment and make sure they're green:
+Acceptance tests execute against long-lived Azure servers and are gated
+behind `TF_ACC=1`. PR CI runs them against Mews infrastructure for branches of
+this repository, but not for forks, which get no Azure credentials. Run them
+against **your own** Azure environment and make sure they're green:
 
 ```bash
 make testacc         # TF_ACC=1 go test -run '^TestAcc' ./internal/...
@@ -88,10 +89,10 @@ make testacc         # TF_ACC=1 go test -run '^TestAcc' ./internal/...
 
 See [`tests/acceptance/README.md`](tests/acceptance/README.md) for the exact
 prerequisites (which Azure resources to deploy, required auth, and the
-environment variables to set). A maintainer also runs the **Acceptance Tests**
-workflow (`.github/workflows/acceptance.yml`, `workflow_dispatch`) against Mews
-infrastructure to verify before merge. Docs- or CI-only PRs (no `.go`, schema,
-or `examples/` changes) are exempt from the acceptance run.
+environment variables to set). Changes merged from forks are covered before
+they ship: the **Acceptance Tests** workflow
+(`.github/workflows/acceptance.yml`) runs on the release PR, which a release
+can't skip.
 
 ## Conventional Commits (required)
 

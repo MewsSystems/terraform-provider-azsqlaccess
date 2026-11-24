@@ -456,7 +456,7 @@ make testacc-only    # acceptance tests only
 # or: make testacc   # full suite (unit + acceptance)
 ```
 
-CI runs the same suite via the manually-dispatched **Acceptance Tests** workflow; auth auto-selects GitHub Actions OIDC when `AZURE_CLIENT_SECRET` is unset, client-secret otherwise.
+CI runs the same suite on every pull request via the **Acceptance Tests** workflow; auth auto-selects GitHub Actions OIDC when `AZURE_CLIENT_SECRET` is unset, client-secret otherwise.
 
 ---
 
