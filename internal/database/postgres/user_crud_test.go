@@ -18,7 +18,7 @@ import (
 
 const (
 	checkPgaadSQL = "SELECT COUNT(*) FROM pg_proc WHERE proname = 'pgaadauth_create_principal'"
-	readUserSQL   = "SELECT oid::bigint FROM pg_roles WHERE rolname = $1"
+	readUserSQL   = "SELECT oid::bigint, COALESCE((SELECT substr(c, 13) FROM unnest(rolconfig) AS c WHERE c LIKE 'search_path=%'), '') FROM pg_roles WHERE rolname = $1"
 )
 
 // newMockedConnector returns a Connector wired to two separate pgxmock pools:
@@ -121,7 +121,7 @@ func TestCreateUser_TypeUser(t *testing.T) {
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
 	pool.ExpectQuery(readUserSQL).
 		WithArgs("juan.perez@milanesa.com").
-		WillReturnRows(pgxmock.NewRows([]string{"oid"}).AddRow(int64(16384)))
+		WillReturnRows(userRow(16384, ""))
 
 	u := &database.User{Type: "user", Name: "juan.perez@milanesa.com"}
 	if err := c.CreateUser(context.Background(), u); err != nil {
@@ -143,7 +143,7 @@ func TestCreateUser_TypeGroup(t *testing.T) {
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
 	pool.ExpectQuery(readUserSQL).
 		WithArgs("db.reader").
-		WillReturnRows(pgxmock.NewRows([]string{"oid"}).AddRow(int64(20000)))
+		WillReturnRows(userRow(20000, ""))
 
 	u := &database.User{
 		Type: "group", Name: "db.reader", ObjectID: "00000000-0000-0000-0000-000000000000",
@@ -161,7 +161,7 @@ func TestCreateUser_TypeServicePrincipal(t *testing.T) {
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
 	pool.ExpectQuery(readUserSQL).
 		WithArgs("myapp-identity").
-		WillReturnRows(pgxmock.NewRows([]string{"oid"}).AddRow(int64(20001)))
+		WillReturnRows(userRow(20001, ""))
 
 	u := &database.User{
 		Type: "service_principal", Name: "myapp-identity", ObjectID: "00000000-0000-0000-0000-000000000000",
@@ -259,7 +259,7 @@ func TestCreateUser_RetriesUntilPrincipalIsInEntra(t *testing.T) {
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
 	pool.ExpectQuery(readUserSQL).
 		WithArgs("myapp-identity").
-		WillReturnRows(pgxmock.NewRows([]string{"oid"}).AddRow(int64(20001)))
+		WillReturnRows(userRow(20001, ""))
 
 	u := &database.User{
 		Type: "service_principal", Name: "myapp-identity", ObjectID: "00000000-0000-0000-0000-000000000000",
@@ -301,7 +301,7 @@ func TestCreateUser_AppliesNonDefaultSchema(t *testing.T) {
 		WillReturnResult(pgxmock.NewResult("ALTER", 1))
 	pool.ExpectQuery(readUserSQL).
 		WithArgs("juan.perez@milanesa.com").
-		WillReturnRows(pgxmock.NewRows([]string{"oid"}).AddRow(int64(123)))
+		WillReturnRows(userRow(123, "reporting"))
 
 	u := &database.User{
 		Type: "user", Name: "juan.perez@milanesa.com", DefaultSchema: "reporting",
@@ -323,7 +323,7 @@ func TestCreateUser_SchemaPublicSkipped(t *testing.T) {
 	// No ALTER ROLE expected for default schema "public".
 	pool.ExpectQuery(readUserSQL).
 		WithArgs("juan.perez@milanesa.com").
-		WillReturnRows(pgxmock.NewRows([]string{"oid"}).AddRow(int64(123)))
+		WillReturnRows(userRow(123, ""))
 
 	u := &database.User{
 		Type: "user", Name: "juan.perez@milanesa.com", DefaultSchema: "public",
@@ -370,7 +370,7 @@ func TestGetUser_Found(t *testing.T) {
 	c, pool, _ := newMockedConnector(t)
 	pool.ExpectQuery(readUserSQL).
 		WithArgs("juan.perez@milanesa.com").
-		WillReturnRows(pgxmock.NewRows([]string{"oid"}).AddRow(int64(99)))
+		WillReturnRows(userRow(99, ""))
 
 	got, err := c.GetUser(context.Background(), "juan.perez@milanesa.com")
 	if err != nil {
@@ -420,7 +420,7 @@ func TestUpdateUser_NonDefaultSchema(t *testing.T) {
 		WillReturnResult(pgxmock.NewResult("ALTER", 1))
 	pool.ExpectQuery(readUserSQL).
 		WithArgs("juan.perez@milanesa.com").
-		WillReturnRows(pgxmock.NewRows([]string{"oid"}).AddRow(int64(1)))
+		WillReturnRows(userRow(1, "reporting"))
 
 	u := &database.User{Name: "juan.perez@milanesa.com", DefaultSchema: "reporting"}
 	if err := c.UpdateUser(context.Background(), u); err != nil {
@@ -434,7 +434,7 @@ func TestUpdateUser_EmptySchemaResetsSearchPath(t *testing.T) {
 		WillReturnResult(pgxmock.NewResult("ALTER", 1))
 	pool.ExpectQuery(readUserSQL).
 		WithArgs("juan.perez@milanesa.com").
-		WillReturnRows(pgxmock.NewRows([]string{"oid"}).AddRow(int64(1)))
+		WillReturnRows(userRow(1, ""))
 
 	u := &database.User{Name: "juan.perez@milanesa.com", DefaultSchema: ""}
 	if err := c.UpdateUser(context.Background(), u); err != nil {
@@ -471,5 +471,38 @@ func TestDeleteUser_Error(t *testing.T) {
 		WillReturnError(errors.New("dependent objects exist"))
 	if err := c.DeleteUser(context.Background(), "x"); err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+// userRow mirrors readUserSQL: the role oid and its raw search_path setting
+// ("" when the role has none).
+func userRow(oid int64, searchPath string) *pgxmock.Rows {
+	return pgxmock.NewRows([]string{"oid", "search_path"}).AddRow(oid, searchPath)
+}
+
+func TestGetUser_ReadsSearchPath(t *testing.T) {
+	cases := map[string]struct{ stored, want string }{
+		"unset":               {"", "public"},
+		"plain":               {"reporting", "reporting"},
+		"quoted":              {`"My Schema"`, "My Schema"},
+		"embedded quote":      {`"a""b"`, `a"b`},
+		"quoted multi-schema": {`"My Schema", "Other Schema"`, `"My Schema", "Other Schema"`},
+		"malformed":           {`"unterminated`, `"unterminated`},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			c, pool, _ := newMockedConnector(t)
+			pool.ExpectQuery(readUserSQL).
+				WithArgs("juan.perez@milanesa.com").
+				WillReturnRows(userRow(99, tc.stored))
+
+			got, err := c.GetUser(context.Background(), "juan.perez@milanesa.com")
+			if err != nil {
+				t.Fatalf("unexpected: %v", err)
+			}
+			if got.DefaultSchema != tc.want {
+				t.Errorf("DefaultSchema = %q, want %q", got.DefaultSchema, tc.want)
+			}
+		})
 	}
 }

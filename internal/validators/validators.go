@@ -10,6 +10,7 @@ package validators
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -44,10 +45,8 @@ func (v stringOneOf) ValidateString(_ context.Context, req validator.StringReque
 		return
 	}
 	val := req.ConfigValue.ValueString()
-	for _, allowed := range v.valid {
-		if val == allowed {
-			return
-		}
+	if slices.Contains(v.valid, val) {
+		return
 	}
 	resp.Diagnostics.AddAttributeError(
 		req.Path,

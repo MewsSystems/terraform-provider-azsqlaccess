@@ -13,7 +13,7 @@ import (
 )
 
 // Happy-trail acceptance tests for azsqlaccess_user.
-// One test per (principal type) × (engine) combination, 6 tests total.
+// One test per (principal type) × (engine) combination, plus attribute cases.
 // Each test:
 //   - Applies the HCL → provider issues CREATE USER ... FROM EXTERNAL PROVIDER
 //     (MSSQL) or pgaadauth_create_principal(...) (Postgres) against the
@@ -314,6 +314,54 @@ resource "azsqlaccess_user" "test" {
 		os.Getenv("AZSQLACCESS_TEST_DATABASE"),
 		os.Getenv("AZSQLACCESS_TEST_SP_NAME"),
 		os.Getenv("AZSQLACCESS_TEST_SP_OBJECT_ID"),
+	)
+}
+
+// default_schema must read back from the role: the post-apply plan check
+// catches a refresh that reports another value, and the import step one that
+// isn't read at all. PostgreSQL accepts a search_path naming a schema that
+// doesn't exist, so the server needs no fixture schema.
+func TestAccUser_defaultSchema_postgres(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccUserConfig_defaultSchema_postgres("acc_reporting"),
+				Check:  resource.TestCheckResourceAttr("azsqlaccess_user.test", "default_schema", "acc_reporting"),
+			},
+			{
+				Config: testAccUserConfig_defaultSchema_postgres("acc Other"),
+				Check:  resource.TestCheckResourceAttr("azsqlaccess_user.test", "default_schema", "acc Other"),
+			},
+			{
+				ResourceName:      "azsqlaccess_user.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateId: fmt.Sprintf("%s/%s/user/%s",
+					os.Getenv("AZSQLACCESS_TEST_POSTGRES_SERVER"),
+					os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE"),
+					os.Getenv("AZSQLACCESS_TEST_USER_UPN"),
+				),
+			},
+		},
+	})
+}
+
+func testAccUserConfig_defaultSchema_postgres(schema string) string {
+	return postgresProviderConfig + fmt.Sprintf(`
+resource "azsqlaccess_user" "test" {
+  server         = %q
+  database       = %q
+  type           = "user"
+  name           = %q
+  default_schema = %q
+}
+`,
+		os.Getenv("AZSQLACCESS_TEST_POSTGRES_SERVER"),
+		os.Getenv("AZSQLACCESS_TEST_POSTGRES_DATABASE"),
+		os.Getenv("AZSQLACCESS_TEST_USER_UPN"),
+		schema,
 	)
 }
 

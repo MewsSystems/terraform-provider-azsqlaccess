@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -103,15 +104,16 @@ func (c *Connector) CreateUser(ctx context.Context, user *database.User) error {
 		}
 	}
 
-	// Normalise: if the caller did not specify a schema (DefaultSchema == ""),
-	// store "public" — PostgreSQL's engine default — so state is always concrete.
-	// This mirrors MSSQL's behaviour where readUserInto always returns "dbo".
-	// Without this, a postgres user created without default_schema would show
-	// default_schema = "" in state, which is misleading and diverges from reality.
+	if err := readUserInto(ctx, c.pool, user); err != nil {
+		return err
+	}
+	// Normalise: a role without a search_path setting uses PostgreSQL's engine
+	// default, "public" — store that so state is always concrete. This mirrors
+	// MSSQL's behaviour where readUserInto always returns "dbo".
 	if user.DefaultSchema == "" {
 		user.DefaultSchema = "public"
 	}
-	return readUserInto(ctx, c.pool, user)
+	return nil
 }
 
 func (c *Connector) GetUser(ctx context.Context, name string) (*database.User, error) {
@@ -128,9 +130,8 @@ func (c *Connector) GetUser(ctx context.Context, name string) (*database.User, e
 	if err != nil {
 		return nil, err
 	}
-	// Normalise: readUserInto only populates PrincipalID (search_path is not
-	// stored in pg_roles). Default to "public" so drift detection is stable
-	// and import produces a valid initial state.
+	// Normalise: a role without a search_path setting uses "public", so drift
+	// detection is stable and import produces a valid initial state.
 	if u.DefaultSchema == "" {
 		u.DefaultSchema = "public"
 	}
@@ -205,19 +206,42 @@ func checkPgaadauthExtension(ctx context.Context, sysPool pgxConn) error {
 	return nil
 }
 
-// readUserInto queries pg_roles for user.Name and populates PrincipalID.
-// Returns pgx.ErrNoRows if the role does not exist.
+// readUserInto queries pg_roles for user.Name and populates PrincipalID and
+// DefaultSchema. Returns pgx.ErrNoRows if the role does not exist.
 //
 // DefaultLanguage is not populated — PostgreSQL has no equivalent concept;
 // the resource layer always writes "" to state.
 //
-// DefaultSchema is intentionally not read back here: the search_path role
-// setting lives in pg_db_role_setting and is awkward to retrieve reliably.
-// Instead, CreateUser and GetUser normalise an unset schema to "public" (the
-// engine default), so state stays concrete without querying it.
+// DefaultSchema is the role's search_path setting ("" when it has none), read
+// from rolconfig, where ALTER ROLE ... SET stores it as `search_path=<value>`.
 func readUserInto(ctx context.Context, pool pgxConn, user *database.User) error {
-	return pool.QueryRow(ctx,
-		"SELECT oid::bigint FROM pg_roles WHERE rolname = $1",
+	var searchPath string
+	if err := pool.QueryRow(ctx,
+		"SELECT oid::bigint, COALESCE((SELECT substr(c, 13) FROM unnest(rolconfig) AS c WHERE c LIKE 'search_path=%'), '') FROM pg_roles WHERE rolname = $1",
 		user.Name,
-	).Scan(&user.PrincipalID)
+	).Scan(&user.PrincipalID, &searchPath); err != nil {
+		return err
+	}
+	user.DefaultSchema = schemaFromSearchPath(searchPath)
+	return nil
+}
+
+// singleSchema matches a search_path value holding exactly one schema as
+// PostgreSQL stores it: bare, or "..."-quoted with "" escaping a quote. RE2's
+// \s is the same set PostgreSQL treats as whitespace there.
+var singleSchema = regexp.MustCompile(`^\s*(?:"((?:[^"]|"")+)"|([^\s,"]+))\s*$`)
+
+// schemaFromSearchPath returns the schema in a single-schema search_path
+// value. Any other value (several schemas, set outside Terraform) is returned
+// as stored, so it shows as drift.
+func schemaFromSearchPath(s string) string {
+	m := singleSchema.FindStringSubmatch(s)
+	switch {
+	case m == nil:
+		return s
+	case m[1] != "":
+		return strings.ReplaceAll(m[1], `""`, `"`)
+	default:
+		return m[2]
+	}
 }

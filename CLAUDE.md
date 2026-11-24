@@ -113,7 +113,7 @@ tools/tools.go                         tfplugindocs entry
 .github/workflows/release-please.yml   On main: release-please opens/merges the release PR → tags v* + creates the Release, then calls release.yml
 .github/workflows/release.yml          workflow_call (or workflow_dispatch to republish): goreleaser publish (GPG sign + upload) for a v* tag
 .github/workflows/test.yml             Build, lint, generate-diff check, unit tests on every PR
-.github/workflows/acceptance.yml       workflow_dispatch-only acceptance tests against real Azure
+.github/workflows/acceptance.yml       pull_request (same-repo) + workflow_dispatch: acceptance tests against real Azure
 ```
 
 ## Common commands
@@ -142,7 +142,7 @@ Practical applications:
 - **Schema patterns.** Plan modifiers, validators, schema field naming (`MarkdownDescription`, `RequiresReplace`, `UseStateForUnknown`) — copy the patterns from Plugin Framework examples and `terraform-provider-scaffolding-framework`'s example resource. Don't invent.
 - **Release pipeline.** `goreleaser` config, GPG signing, the `release.yml` goreleaser job shape, `terraform-registry-manifest.json` — all from HashiCorp's published templates. Anything that affects what the registry consumes must follow them verbatim.
 - **Linter config.** `.golangci.yml` mirrors HashiCorp's recommended set for providers (the v2 config inherited from scaffolding). Add to it (e.g. `goheader`); don't replace its base.
-- **Test conventions.** Acceptance tests live in `internal/provider/*_acceptance_test.go`, gated by `TF_ACC=1`, using `providerserver.NewProtocol6WithError` and the `testAccProtoV6ProviderFactories` shape defined in `provider_test.go`. PR CI runs unit tests only (no `TF_ACC`); acceptance tests run via `workflow_dispatch` on `acceptance.yml` against long-lived Azure SQL + Postgres servers documented as prereqs in `tests/acceptance/README.md` — CI provisions nothing.
+- **Test conventions.** Acceptance tests live in `internal/provider/*_acceptance_test.go`, gated by `TF_ACC=1`, using `providerserver.NewProtocol6WithError` and the `testAccProtoV6ProviderFactories` shape defined in `provider_test.go`. Acceptance tests run on every same-repo PR (and by `workflow_dispatch`) via `acceptance.yml` against long-lived Azure SQL + Postgres servers documented as prereqs in `tests/acceptance/README.md` — CI provisions nothing.
 
 When a HashiCorp/Plugin-Framework convention conflicts with a third-party suggestion (Copilot, AI reviewer, blog post), the HashiCorp convention wins unless there's a documented project-specific reason to deviate. Document that reason in CLAUDE.md or a code comment if you ever do.
 

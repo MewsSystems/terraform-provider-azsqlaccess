@@ -1,14 +1,17 @@
-# Manual acceptance suite. Hits the long-lived Azure SQL + Postgres servers
+# Acceptance suite. Hits the long-lived Azure SQL + Postgres servers
 # documented as prereqs in tests/acceptance/README.md — this workflow does not
-# provision or destroy any infrastructure.
+# provision or destroy any infrastructure. It runs on every pull request,
+# including the release PR, so a regression is caught before it is released.
 
 name: Acceptance Tests
 
 on:
+  pull_request:
   workflow_dispatch:
 
 # Tests create + drop principals with stable names on shared servers, so two
-# concurrent runs would collide. Queue, don't cancel.
+# concurrent runs would collide. Queue, don't cancel. A queue holds one pending
+# run: a newer one replaces it, and the replaced PR's check needs a re-run.
 concurrency:
   group: acceptance-tests
   cancel-in-progress: false
@@ -19,6 +22,10 @@ permissions:
 
 jobs:
   acceptance:
+    name: Acceptance Tests
+    # Fork PRs get no secrets or OIDC token, so they skip; the release PR runs
+    # the suite on everything they merged.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: acceptance-tests
