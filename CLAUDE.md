@@ -10,7 +10,7 @@ Operational notes for working in this repository. The README is the user-facing 
 - **Provider source:** `MewsSystems/azsqlaccess` → `registry.terraform.io/MewsSystems/azsqlaccess` (publication pending). Namespace matches the GitHub org that owns the repo.
 - **Module path:** `github.com/mews/terraform-provider-azsqlaccess`.
 - **Framework:** [terraform-plugin-framework](https://developer.hashicorp.com/terraform/plugin/framework) — **not** the deprecated SDKv2.
-- **Go:** see `go.mod` (currently 1.25.11).
+- **Go:** see `go.mod` (currently 1.27.4).
 
 ## Status
 
